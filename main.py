@@ -1,17 +1,33 @@
-from agents.video_downloader import download_video
+from services.pipeline import process_video
 
-print("=" * 50)
-print("🚀 AuraAI Video Downloader")
-print("=" * 50)
 
-url = input("Paste YouTube URL: ")
+def main() -> None:
+    print("=" * 55)
+    print("AURA AI — Content Processing Pipeline")
+    print("=" * 55)
 
-try:
-    filename = download_video(url)
+    url = input("Paste an authorized YouTube URL: ")
 
-    print("\n✅ Download completed!")
-    print(f"Saved to: {filename}")
+    try:
+        video_path, audio_path = process_video(url)
 
-except Exception as e:
-    print("\n❌ Error")
-    print(e)
+    except ValueError as error:
+        print(f"\nInput error: {error}")
+
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by the user.")
+
+    except Exception as error:
+        print("\nAn error occurred:")
+        print(error)
+
+    else:
+        print("\n" + "=" * 55)
+        print("Processing completed successfully.")
+        print(f"Video: {video_path}")
+        print(f"Audio: {audio_path}")
+        print("=" * 55)
+
+
+if __name__ == "__main__":
+    main()

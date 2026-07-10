@@ -1,8 +1,9 @@
-from pathlib import Path
+
+from config.settings import VIDEO_DIR
 import yt_dlp
 
-# Folder where downloaded videos will be stored
-DOWNLOAD_FOLDER = Path("data/videos")
+
+
 
 
 def download_video(url):
@@ -13,11 +14,11 @@ def download_video(url):
         Path of the downloaded file.
     """
 
-    # Create folder if it doesn't exist
-    DOWNLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+    
+    
 
     options = {
-        "outtmpl": str(DOWNLOAD_FOLDER / "%(title)s.%(ext)s"),
+        "outtmpl": str(VIDEO_DIR / "%(title)s.%(ext)s"),
         "format": "best",
         "noplaylist": True,
     }
