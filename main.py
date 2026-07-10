@@ -1,9 +1,17 @@
-print("Welcome to Project AURA 🚀")
+from agents.video_downloader import download_video
 
-name = input("What is your name? ")
-goal = input("What do you want AURA to help you create? ")
+print("=" * 50)
+print("🚀 AuraAI Video Downloader")
+print("=" * 50)
 
-print()
-print(f"Hello {name}!")
-print(f"AURA will help you create: {goal}")
-print("Project setup completed successfully.")
+url = input("Paste YouTube URL: ")
+
+try:
+    filename = download_video(url)
+
+    print("\n✅ Download completed!")
+    print(f"Saved to: {filename}")
+
+except Exception as e:
+    print("\n❌ Error")
+    print(e)
