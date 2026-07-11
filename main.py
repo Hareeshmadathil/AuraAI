@@ -9,7 +9,7 @@ def main() -> None:
     url = input("Paste an authorized YouTube URL: ")
 
     try:
-        video_path, audio_path = process_video(url)
+        video_path, audio_path, transcript_path = process_video(url)
 
     except ValueError as error:
         print(f"\nInput error: {error}")
@@ -26,6 +26,7 @@ def main() -> None:
         print("Processing completed successfully.")
         print(f"Video: {video_path}")
         print(f"Audio: {audio_path}")
+        print(f"Transcript: {transcript_path}")
         print("=" * 55)
 
 

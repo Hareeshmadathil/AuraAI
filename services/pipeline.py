@@ -1,34 +1,22 @@
 from pathlib import Path
 
 from agents.audio_extractor import extract_audio
+from agents.transcriber import transcribe_audio
 from agents.video_downloader import download_video
-from config.settings import AUDIO_DIR, VIDEO_DIR
 
 
-def process_video(url: str) -> tuple[Path, Path]:
+def process_video(url: str) -> tuple[Path, Path, Path]:
     """
-    Run the AuraAI processing pipeline.
-
-    Steps:
-        1. Download the video.
-        2. Extract audio from the video.
-
-    Args:
-        url: Authorized video URL.
+    Run the AuraAI content-processing pipeline.
 
     Returns:
-        A tuple containing:
-        - downloaded video path
-        - extracted audio path
+        Video path, audio path, and transcript path.
     """
 
     cleaned_url = url.strip()
 
     if not cleaned_url:
         raise ValueError("A video URL is required.")
-
-    VIDEO_DIR.mkdir(parents=True, exist_ok=True)
-    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
     print("\nStep 1: Downloading video...")
     video_path = download_video(cleaned_url)
@@ -42,4 +30,10 @@ def process_video(url: str) -> tuple[Path, Path]:
     print("\nAudio extraction completed.")
     print(f"Audio saved to: {audio_path}")
 
-    return video_path, audio_path
+    print("\nStep 3: Transcribing audio...")
+    transcript_path = transcribe_audio(audio_path)
+
+    print("\nTranscript created.")
+    print(f"Transcript saved to: {transcript_path}")
+
+    return video_path, audio_path, transcript_path
