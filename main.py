@@ -3,13 +3,13 @@ from services.pipeline import process_video
 
 def main() -> None:
     print("=" * 55)
-    print("AURA AI — Content Processing Pipeline")
+    print("AURA AI - Content Processing Pipeline")
     print("=" * 55)
 
-    url = input("Paste an authorized YouTube URL: ")
+    url = input("Paste an authorized YouTube URL: ").strip()
 
     try:
-        video_path, audio_path, transcript_path = process_video(url)
+        video_path, audio_path, transcript_path, analysis = process_video(url)
 
     except ValueError as error:
         print(f"\nInput error: {error}")
@@ -24,9 +24,17 @@ def main() -> None:
     else:
         print("\n" + "=" * 55)
         print("Processing completed successfully.")
-        print(f"Video: {video_path}")
-        print(f"Audio: {audio_path}")
-        print(f"Transcript: {transcript_path}")
+        print(f"Video      : {video_path}")
+        print(f"Audio      : {audio_path}")
+        print(f"Transcript : {transcript_path}")
+
+        print("\nAnalysis")
+        print("-" * 55)
+        print(f"Words      : {analysis['word_count']}")
+        print(f"Characters : {analysis['character_count']}")
+        print("\nPreview:")
+        print(analysis["preview"])
+
         print("=" * 55)
 
 
