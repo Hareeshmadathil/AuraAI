@@ -15,12 +15,12 @@ from agents.specialists.seo_specialist import (
 )
 from agents.specialists.instagram_manager import InstagramManager
 from agents.specialists.tiktok_manager import TikTokManager
-from agents.specialists.youtube_manager import (
+from agents.specialists.platform_manager_base import (
     PlatformContentFormat,
     PlatformGrowthPlan,
     PlatformPublishingPlan,
-    YouTubeManager,
 )
+from agents.specialists.youtube_manager import YouTubeManager
 
 __all__ = [
     "TrendCandidate",

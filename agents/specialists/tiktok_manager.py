@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agents.specialists.seo_specialist import SEOPlan
-from agents.specialists.youtube_manager import (
+from agents.specialists.platform_manager_base import (
     PlatformContentFormat,
     PlatformGrowthPlan,
     PlatformManagerBase,

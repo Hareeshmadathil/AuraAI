@@ -1,9 +1,12 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 .env
 logs/
 outputs/
+data/cache/
+data/database/
 data/videos/
 data/audio/
 data/transcripts/
