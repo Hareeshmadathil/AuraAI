@@ -2,8 +2,21 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 from agents.llm import generate_json_with_gemini
 from config.settings import CONTENT_DIR
+
+
+class CreatorContent(BaseModel):
+    youtube_title: str
+    youtube_description: str
+    hashtags: list[str]
+    youtube_tags: list[str]
+    shorts_titles: list[str]
+    instagram_caption: str
+    twitter_post: str
+    linkedin_post: str
 
 
 def generate_content(
@@ -13,9 +26,6 @@ def generate_content(
 ) -> Path:
     """
     Generate creator-ready social media content using Gemini.
-
-    Returns:
-        Path to the generated content JSON file.
     """
 
     if not transcript.strip():
@@ -27,19 +37,6 @@ specialist.
 
 Create creator-ready content using the transcript and analysis below.
 
-Return ONLY valid JSON with exactly this structure:
-
-{{
-    "youtube_title": "",
-    "youtube_description": "",
-    "hashtags": [],
-    "youtube_tags": [],
-    "shorts_titles": [],
-    "instagram_caption": "",
-    "twitter_post": "",
-    "linkedin_post": ""
-}}
-
 Rules:
 - create one engaging YouTube title
 - keep the YouTube title under 100 characters
@@ -49,9 +46,7 @@ Rules:
 - return no more than 15 YouTube tags
 - return exactly 5 Shorts title ideas
 - keep the Twitter/X post concise
-- do not invent facts that are absent from the transcript
-- do not include markdown code fences
-- return JSON only
+- do not invent facts absent from the transcript
 
 Transcript:
 
@@ -62,24 +57,10 @@ Existing analysis:
 {json.dumps(analysis, indent=2, ensure_ascii=False)}
 """
 
-    generated_content = generate_json_with_gemini(prompt)
-
-    required_fields = {
-        "youtube_title": "",
-        "youtube_description": "",
-        "hashtags": [],
-        "youtube_tags": [],
-        "shorts_titles": [],
-        "instagram_caption": "",
-        "twitter_post": "",
-        "linkedin_post": "",
-    }
-
-    # Ensure every expected field exists.
-    content = {
-        field: generated_content.get(field, default)
-        for field, default in required_fields.items()
-    }
+    content = generate_json_with_gemini(
+        prompt,
+        response_model=CreatorContent,
+    )
 
     CONTENT_DIR.mkdir(parents=True, exist_ok=True)
 

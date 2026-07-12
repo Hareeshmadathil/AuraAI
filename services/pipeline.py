@@ -3,6 +3,7 @@ from typing import Any
 
 from agents.analyzer import analyze_transcript
 from agents.audio_extractor import extract_audio
+from agents.clip_finder import find_clip_candidates
 from agents.content_generator import generate_content
 from agents.transcriber import transcribe_audio
 from agents.video_downloader import download_video
@@ -18,13 +19,15 @@ def process_video(
     dict[str, Any],
     Path,
     Path,
+    list[dict[str, Any]],
 ]:
     """
     Run the complete AuraAI content-processing pipeline.
 
     Returns:
         Video path, audio path, transcript path, timestamp JSON path,
-        analysis dictionary, analysis JSON path, and content JSON path.
+        analysis dictionary, analysis JSON path, content JSON path,
+        and timestamped clip candidates.
     """
 
     cleaned_url = url.strip()
@@ -76,6 +79,15 @@ def process_video(
     print("\nAI content generation completed.")
     print(f"Content saved to: {content_path}")
 
+    print("\nStep 6: Finding clip timestamps...")
+    clip_candidates = find_clip_candidates(
+        timestamp_json=timestamp_path,
+        analysis=analysis,
+    )
+
+    print("\nClip timestamp matching completed.")
+    print(f"Matched clips: {len(clip_candidates)}")
+
     return (
         video_path,
         audio_path,
@@ -84,4 +96,5 @@ def process_video(
         analysis,
         analysis_path,
         content_path,
+        clip_candidates,
     )
