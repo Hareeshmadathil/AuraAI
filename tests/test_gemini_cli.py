@@ -1,6 +1,7 @@
 """Safe Gemini CLI tests; every live-shaped call uses a mock transport."""
 
 from providers.gemini.provider import main
+from providers.gemini.config import FOUNDER_SMOKE_TEST_TIMEOUT_SECONDS
 from providers.gemini import GeminiTransportResponse
 from providers.gemini.transport import MockGeminiTransport
 from tests.gemini_helpers import response_for
@@ -40,6 +41,7 @@ def test_cli_mocked_live_success_is_redacted(capsys) -> None:
     assert "success=true" in output
     assert "typed_response=ResearchOutput" in output
     assert secret not in output
+    assert transport.timeout_seconds == [FOUNDER_SMOKE_TEST_TIMEOUT_SECONDS]
 
 
 def test_cli_mocked_live_failure_falls_back_and_is_redacted(capsys) -> None:

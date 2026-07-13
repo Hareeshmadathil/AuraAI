@@ -295,11 +295,11 @@ class GeminiResponseParser:
                 details=_diagnostic("rate_limited", **common),
                 retryable=True,
             )
-        if status == 408:
+        if status in {408, 504}:
             raise ProviderTimeoutError(
-                "Gemini request timed out.",
+                "Gemini server deadline was exceeded.",
                 provider_name="gemini",
-                details=_diagnostic("request_timeout", **common),
+                details=_diagnostic("server_timeout", **common),
                 retryable=True,
             )
         if status == 404:

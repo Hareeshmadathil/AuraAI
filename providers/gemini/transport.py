@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import socket
+import ssl
 from dataclasses import dataclass
 from enum import StrEnum
 from threading import Event
@@ -37,6 +38,10 @@ class GeminiTransportErrorCode(StrEnum):
     RESPONSE_TOO_LARGE = "response_too_large"
     INVALID_ENDPOINT = "invalid_endpoint"
     INVALID_RESPONSE_ENCODING = "invalid_response_encoding"
+    DNS_FAILURE = "dns_failure"
+    CONNECTION_TIMEOUT = "connection_timeout"
+    TLS_FAILURE = "tls_failure"
+    SOCKET_TIMEOUT = "socket_timeout"
 
 
 class GeminiTransportError(ProviderUnavailableError):
@@ -101,6 +106,7 @@ class MockGeminiTransport:
     ) -> None:
         self._responder = responder
         self.requests: list[GeminiRequest] = []
+        self.timeout_seconds: list[float] = []
 
     def send(
         self,
@@ -109,7 +115,7 @@ class MockGeminiTransport:
         timeout_seconds: float,
         cancel_event: Event | None = None,
     ) -> GeminiTransportResponse:
-        del timeout_seconds
+        self.timeout_seconds.append(timeout_seconds)
         if cancel_event is not None and cancel_event.is_set():
             raise GeminiTransportError(
                 "Gemini request was cancelled before execution.",
@@ -175,17 +181,46 @@ def standard_library_http_executor(
             body=body,
             headers=dict(error.headers.items()) if error.headers else {},
         )
+    except socket.gaierror as error:
+        raise GeminiTransportError(
+            "Gemini DNS resolution failed.",
+            code=GeminiTransportErrorCode.DNS_FAILURE,
+            retryable=True,
+        ) from error
+    except ssl.SSLError as error:
+        raise GeminiTransportError(
+            "Gemini TLS negotiation failed.",
+            code=GeminiTransportErrorCode.TLS_FAILURE,
+            retryable=False,
+        ) from error
     except (TimeoutError, socket.timeout) as error:
-        raise ProviderTimeoutError(
-            "Gemini request timed out.",
-            provider_name="gemini",
+        raise GeminiTransportError(
+            "Gemini socket operation timed out.",
+            code=GeminiTransportErrorCode.SOCKET_TIMEOUT,
             retryable=True,
         ) from error
     except URLError as error:
+        reason = error.reason
+        if isinstance(reason, socket.gaierror):
+            code = GeminiTransportErrorCode.DNS_FAILURE
+            message = "Gemini DNS resolution failed."
+            retryable = True
+        elif isinstance(reason, ssl.SSLError):
+            code = GeminiTransportErrorCode.TLS_FAILURE
+            message = "Gemini TLS negotiation failed."
+            retryable = False
+        elif isinstance(reason, (TimeoutError, socket.timeout)):
+            code = GeminiTransportErrorCode.CONNECTION_TIMEOUT
+            message = "Gemini connection timed out."
+            retryable = True
+        else:
+            code = GeminiTransportErrorCode.NETWORK_UNAVAILABLE
+            message = "Gemini network transport was unavailable."
+            retryable = True
         raise GeminiTransportError(
-            "Gemini network transport was unavailable.",
-            code=GeminiTransportErrorCode.NETWORK_UNAVAILABLE,
-            retryable=True,
+            message,
+            code=code,
+            retryable=retryable,
         ) from error
 
 
@@ -261,6 +296,12 @@ class HttpGeminiTransport:
                 code=GeminiTransportErrorCode.NETWORK_UNAVAILABLE,
                 retryable=True,
             ) from error
+        if cancel_event is not None and cancel_event.is_set():
+            raise GeminiTransportError(
+                "Gemini request was cancelled by the client.",
+                code=GeminiTransportErrorCode.CANCELLED,
+                retryable=False,
+            )
         try:
             text = result.body.decode("utf-8", errors="strict")
         except UnicodeDecodeError as error:

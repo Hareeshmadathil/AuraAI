@@ -12,6 +12,7 @@ from providers.gemini.safety import GeminiSafetyConfig
 
 DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 ALLOWED_GEMINI_HOSTS = frozenset({"generativelanguage.googleapis.com"})
+FOUNDER_SMOKE_TEST_TIMEOUT_SECONDS = 90.0
 
 
 class GeminiConfig(AuraBaseModel):

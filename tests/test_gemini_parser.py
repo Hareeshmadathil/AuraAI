@@ -9,6 +9,7 @@ from providers.exceptions import (
     ProviderAuthenticationError,
     ProviderRateLimitError,
     ProviderSafetyError,
+    ProviderTimeoutError,
     ProviderUnavailableError,
     ProviderValidationError,
 )
@@ -173,6 +174,25 @@ def test_parser_classifies_model_unavailable_and_rate_limit() -> None:
         assert raised.value.details["http_status"] == status
         assert raised.value.retryable is retryable
         assert "private provider detail" not in str(raised.value)
+
+
+@pytest.mark.parametrize("status", [408, 504])
+def test_parser_classifies_server_timeout(status: int) -> None:
+    request = request_stub()
+    response = GeminiTransportResponse(
+        request_id=request.request_id,
+        status_code=status,
+        response_body='{"error":{"message":"private timeout detail"}}',
+        latency_ms=1,
+    )
+
+    with pytest.raises(ProviderTimeoutError) as raised:
+        parse(response)
+
+    assert raised.value.details["safe_error_code"] == "server_timeout"
+    assert raised.value.details["http_status"] == status
+    assert raised.value.details["transport_completed"] is True
+    assert "private timeout detail" not in str(raised.value)
 
 
 def test_parser_classifies_candidate_invalid_json_and_empty_response() -> None:

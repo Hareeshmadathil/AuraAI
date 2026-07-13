@@ -1,7 +1,11 @@
 """Bounded HTTP and mock transport tests with no live requests."""
 
 import json
+import socket
+import ssl
 from threading import Event
+from urllib.error import URLError
+from urllib.request import Request
 
 import pytest
 
@@ -13,6 +17,7 @@ from providers.gemini.transport import (
     HttpGeminiTransport,
     MockGeminiTransport,
     UnavailableGeminiTransport,
+    standard_library_http_executor,
 )
 from tests.gemini_helpers import prompt_for
 
@@ -169,6 +174,68 @@ def test_mock_transport_supports_structured_cancellation() -> None:
             timeout_seconds=1,
             cancel_event=cancelled,
         )
+    assert raised.value.details["safe_error_code"] == "cancelled"
+
+
+@pytest.mark.parametrize(
+    ("failure", "safe_code", "retryable"),
+    [
+        (URLError(socket.gaierror("mock DNS failure")), "dns_failure", True),
+        (
+            URLError(TimeoutError("mock connect timeout")),
+            "connection_timeout",
+            True,
+        ),
+        (URLError(ssl.SSLError("mock TLS failure")), "tls_failure", False),
+        (socket.timeout("mock socket timeout"), "socket_timeout", True),
+    ],
+)
+def test_executor_classifies_network_failures(
+    monkeypatch,
+    failure: Exception,
+    safe_code: str,
+    retryable: bool,
+) -> None:
+    class FailingOpener:
+        def open(self, *_args, **_kwargs):
+            raise failure
+
+    monkeypatch.setattr(
+        "providers.gemini.transport.build_opener",
+        lambda *_: FailingOpener(),
+    )
+
+    with pytest.raises(GeminiTransportError) as raised:
+        standard_library_http_executor(
+            Request("https://generativelanguage.googleapis.com"),
+            1,
+            100,
+        )
+
+    assert raised.value.details["safe_error_code"] == safe_code
+    assert raised.value.retryable is retryable
+
+
+def test_http_transport_detects_cancellation_after_executor() -> None:
+    cancelled = Event()
+
+    def executor(*_):
+        cancelled.set()
+        return HttpExecutionResult(200, b"{}", {})
+
+    transport = HttpGeminiTransport(
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        api_key="fake-cancellation-key",
+        executor=executor,
+    )
+
+    with pytest.raises(GeminiTransportError) as raised:
+        transport.send(
+            build_request(),
+            timeout_seconds=1,
+            cancel_event=cancelled,
+        )
+
     assert raised.value.details["safe_error_code"] == "cancelled"
 
 

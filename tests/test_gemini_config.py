@@ -13,6 +13,7 @@ def test_gemini_is_disabled_and_not_live_by_default() -> None:
     assert config.configured is False
     assert config.live_ready is False
     assert config.model == "gemini-3.5-flash"
+    assert config.timeout_seconds == 30
 
 
 def test_live_configuration_requires_all_explicit_gates() -> None:

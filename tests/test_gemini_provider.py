@@ -157,7 +157,10 @@ def test_legacy_unordered_schema_reproduces_validation_fallback() -> None:
 
 
 def test_timeout_and_invalid_response_fall_back_safely() -> None:
+    attempts: list[object] = []
+
     def timeout(_request):
+        attempts.append(_request)
         raise ProviderTimeoutError(
             "mock timeout", provider_name="gemini", retryable=True
         )
@@ -172,6 +175,7 @@ def test_timeout_and_invalid_response_fall_back_safely() -> None:
     )
     assert timeout_result.provider == "deterministic"
     assert timeout_result.fallback_used is True
+    assert len(attempts) == 2
 
     invalid_transport = MockGeminiTransport(
         lambda request: GeminiTransportResponse(

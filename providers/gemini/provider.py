@@ -11,7 +11,10 @@ from time import sleep
 
 from core import AuraAIError, utc_now
 from providers.exceptions import ProviderRateLimitError, ProviderUnavailableError
-from providers.gemini.config import GeminiConfig
+from providers.gemini.config import (
+    FOUNDER_SMOKE_TEST_TIMEOUT_SECONDS,
+    GeminiConfig,
+)
 from providers.gemini.models import (
     GeminiParserStage,
     GeminiRequest,
@@ -323,6 +326,7 @@ def main(
         api_key=api_key,
         request_budget=1,
         maximum_retries=0,
+        timeout_seconds=FOUNDER_SMOKE_TEST_TIMEOUT_SECONDS,
         founder_smoke_test_diagnostics=True,
     )
     selected_transport = transport or HttpGeminiTransport(
