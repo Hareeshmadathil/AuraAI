@@ -67,6 +67,9 @@ class GeminiPromptBuilder:
             maximum_output_tokens=config.maximum_output_tokens,
             safety_settings=config.safety_settings.as_transport_settings(),
             metadata=self.safe_prompt_metadata(prompt),
+            founder_smoke_test_diagnostics=(
+                config.founder_smoke_test_diagnostics
+            ),
         )
 
     @staticmethod

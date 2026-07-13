@@ -38,6 +38,7 @@ class GeminiConfig(AuraBaseModel):
     request_budget: int | None = Field(default=None, ge=1)
     daily_request_limit: int | None = Field(default=None, ge=1)
     sample_data: bool = False
+    founder_smoke_test_diagnostics: bool = False
 
     @model_validator(mode="after")
     def validate_live_configuration(self) -> "GeminiConfig":

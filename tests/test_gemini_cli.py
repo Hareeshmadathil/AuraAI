@@ -88,3 +88,25 @@ def test_cli_reports_only_safe_validation_diagnostics(capsys) -> None:
     assert "schema_validation_started=false" in output
     assert secret not in output
     assert "raw private response" not in output
+
+
+def test_cli_prints_transport_classification_without_raw_error(capsys) -> None:
+    def reject(request):
+        return GeminiTransportResponse(
+            request_id=request.request_id,
+            status_code=400,
+            response_body="",
+            latency_ms=1,
+            safe_error_code="unsupported_generation_parameter",
+        )
+
+    result = main(
+        ["--smoke-test", "--enable-live", "--founder-approved"],
+        transport=MockGeminiTransport(reject),
+        secret_reader=lambda _: "fake-classified-cli-key",
+    )
+    output = capsys.readouterr().out
+
+    assert result == 0
+    assert "safe_error_code=unsupported_generation_parameter" in output
+    assert "http_status=400" in output

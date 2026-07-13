@@ -17,12 +17,12 @@ from providers.gemini.transport import (
 from tests.gemini_helpers import prompt_for
 
 
-def build_request():
-    config = GeminiConfig()
+def build_request(config: GeminiConfig | None = None):
+    selected_config = config or GeminiConfig()
     return GeminiPromptBuilder().build_request(
         ProviderCapability.RESEARCH,
         prompt_for(ProviderCapability.RESEARCH),
-        config,
+        selected_config,
     )
 
 
@@ -58,6 +58,50 @@ def test_http_transport_uses_injected_executor_and_safe_json() -> None:
     generation = observed["payload"]["generationConfig"]
     assert generation["responseFormat"]["text"]["mimeType"] == "application/json"
     assert "responseSchema" not in generation
+    assert "temperature" not in generation
+    assert "topP" not in generation
+
+
+def test_founder_smoke_diagnostics_classify_400_and_discard_body() -> None:
+    private_body = json.dumps(
+        {
+            "error": {
+                "code": 400,
+                "message": (
+                    "Invalid JSON payload received. Unknown name "
+                    "'temperature' at generation_config."
+                ),
+                "status": "INVALID_ARGUMENT",
+            }
+        }
+    ).encode()
+
+    transport = HttpGeminiTransport(
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        api_key="fake-diagnostic-key",
+        executor=lambda *_: HttpExecutionResult(400, private_body, {}),
+    )
+    response = transport.send(
+        build_request(GeminiConfig(founder_smoke_test_diagnostics=True)),
+        timeout_seconds=1,
+    )
+
+    assert response.status_code == 400
+    assert response.safe_error_code == "unsupported_generation_parameter"
+    assert response.response_body == ""
+
+
+def test_http_400_classification_is_disabled_outside_founder_smoke_test() -> None:
+    private_body = b'{"error":{"message":"mock private error"}}'
+    transport = HttpGeminiTransport(
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        api_key="fake-disabled-diagnostic-key",
+        executor=lambda *_: HttpExecutionResult(400, private_body, {}),
+    )
+
+    response = transport.send(build_request(), timeout_seconds=1)
+
+    assert response.safe_error_code is None
 
 
 def test_transport_enforces_https_and_allowlisted_host() -> None:

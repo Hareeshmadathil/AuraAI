@@ -134,6 +134,26 @@ def test_parser_classifies_structured_request_rejection_before_json_parsing() ->
     assert "mock schema rejection" not in str(raised.value)
 
 
+def test_parser_preserves_transport_classification_for_http_400() -> None:
+    request = request_stub()
+    response = GeminiTransportResponse(
+        request_id=request.request_id,
+        status_code=400,
+        response_body="",
+        latency_ms=1,
+        safe_error_code="unsupported_generation_parameter",
+    )
+
+    with pytest.raises(ProviderValidationError) as raised:
+        parse(response)
+
+    assert (
+        raised.value.details["safe_error_code"]
+        == "unsupported_generation_parameter"
+    )
+    assert raised.value.details["http_status"] == 400
+
+
 def test_parser_classifies_model_unavailable_and_rate_limit() -> None:
     request = request_stub()
     cases = [

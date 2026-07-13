@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 from dataclasses import dataclass
 from enum import StrEnum
@@ -268,29 +269,83 @@ class HttpGeminiTransport:
                 code=GeminiTransportErrorCode.INVALID_RESPONSE_ENCODING,
                 retryable=False,
             ) from error
+        safe_error_code = None
+        if result.status_code == 400 and request.founder_smoke_test_diagnostics:
+            safe_error_code = self._classify_http_400(text)
+            text = ""
         return GeminiTransportResponse(
             request_id=request.request_id,
             status_code=result.status_code,
             response_body=text,
             latency_ms=(perf_counter() - started) * 1000,
             provider_request_id=result.headers.get("x-request-id"),
+            safe_error_code=safe_error_code,
         )
 
     @staticmethod
     def _request_payload(request: GeminiRequest) -> dict[str, object]:
+        generation_config: dict[str, object] = {
+            "maxOutputTokens": request.maximum_output_tokens,
+            "responseFormat": {
+                "text": {
+                    "mimeType": "application/json",
+                    "schema": request.response_schema,
+                }
+            },
+        }
+        if not request.model.startswith("gemini-3.5"):
+            generation_config.update(
+                temperature=request.temperature,
+                topP=request.top_p,
+            )
         return {
             "systemInstruction": {"parts": [{"text": request.system_instruction}]},
             "contents": [{"role": "user", "parts": [{"text": request.user_prompt}]}],
-            "generationConfig": {
-                "temperature": request.temperature,
-                "topP": request.top_p,
-                "maxOutputTokens": request.maximum_output_tokens,
-                "responseFormat": {
-                    "text": {
-                        "mimeType": "application/json",
-                        "schema": request.response_schema,
-                    }
-                },
-            },
+            "generationConfig": generation_config,
             "safetySettings": request.safety_settings,
         }
+
+    @staticmethod
+    def _classify_http_400(response_body: str) -> str:
+        """Classify a Google error without retaining or returning its content."""
+
+        try:
+            payload = json.loads(response_body)
+        except (json.JSONDecodeError, TypeError):
+            return "invalid_request"
+        error = payload.get("error") if isinstance(payload, dict) else None
+        message = error.get("message") if isinstance(error, dict) else None
+        if not isinstance(message, str):
+            return "invalid_request"
+        normalized = re.sub(r"[^a-z0-9_ ]", " ", message.lower())
+        classifications = (
+            (
+                (
+                    "temperature",
+                    "topp",
+                    "top_p",
+                    "top p",
+                    "topk",
+                    "top_k",
+                ),
+                "unsupported_generation_parameter",
+            ),
+            (
+                ("responseformat", "response_format", "response format"),
+                "unsupported_response_format",
+            ),
+            (
+                ("responseschema", "response_schema", "schema"),
+                "invalid_response_schema",
+            ),
+            (
+                ("safetysettings", "safety_settings", "harm_category"),
+                "invalid_safety_settings",
+            ),
+            (("contents", "parts", "role"), "invalid_contents"),
+            (("model",), "invalid_model"),
+        )
+        for markers, safe_code in classifications:
+            if any(marker in normalized for marker in markers):
+                return safe_code
+        return "invalid_request"

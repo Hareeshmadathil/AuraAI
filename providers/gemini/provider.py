@@ -323,6 +323,7 @@ def main(
         api_key=api_key,
         request_budget=1,
         maximum_retries=0,
+        founder_smoke_test_diagnostics=True,
     )
     selected_transport = transport or HttpGeminiTransport(
         base_url=config.base_url,

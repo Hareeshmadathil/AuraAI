@@ -65,6 +65,7 @@ class GeminiRequest(AuraBaseModel):
     maximum_output_tokens: int = Field(ge=1, le=65536)
     safety_settings: list[dict[str, str]] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)
+    founder_smoke_test_diagnostics: bool = False
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("created_at")
@@ -87,6 +88,7 @@ class GeminiTransportResponse(AuraBaseModel):
     output_token_count: int | None = Field(default=None, ge=0)
     finish_reason: str | None = Field(default=None, max_length=100)
     safety_metadata: dict[str, Any] = Field(default_factory=dict)
+    safe_error_code: str | None = Field(default=None, max_length=100)
     received_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("received_at")

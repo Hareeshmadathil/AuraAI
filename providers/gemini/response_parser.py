@@ -319,7 +319,9 @@ class GeminiResponseParser:
         raise ProviderValidationError(
             "Gemini rejected the structured request.",
             provider_name="gemini",
-            details=_diagnostic("invalid_request", **common),
+            details=_diagnostic(
+                response.safe_error_code or "invalid_request", **common
+            ),
             retryable=False,
         )
 
