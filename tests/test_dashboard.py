@@ -40,6 +40,20 @@ def test_dashboard_page_returns_html() -> None:
     assert "No missions supplied" in response.text
 
 
+def test_sidebar_css_preserves_scrollable_desktop_and_mobile_flow() -> None:
+    """Keep long desktop navigation accessible without trapping mobile flow."""
+
+    response = TestClient(create_app()).get("/static/css/dashboard.css")
+
+    assert response.status_code == 200
+    stylesheet = response.text
+    assert "height: 100dvh" in stylesheet
+    assert "overflow-y: auto" in stylesheet
+    assert "overflow-x: hidden" in stylesheet
+    assert "scrollbar-width: thin" in stylesheet
+    assert "height: auto; overflow: visible" in stylesheet
+
+
 def test_health_endpoint_returns_structured_json() -> None:
     """Report the local web layer as operational."""
 
