@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from core.constants import AgentStatus, DepartmentName, JobStatus, MissionStatus
 from core.decision import DecisionRecord
@@ -45,6 +45,26 @@ class RuntimeEventType(StrEnum):
     PRODUCTION_STAGE_COMPLETED = "production_stage_completed"
     PRODUCTION_STAGE_FAILED = "production_stage_failed"
     PRODUCTION_PACKAGE_READY = "production_package_ready"
+    RENDER_REQUESTED = "render_requested"
+    RENDER_STARTED = "render_started"
+    CAPABILITY_CHECK_COMPLETED = "capability_check_completed"
+    VOICE_RENDER_STARTED = "voice_render_started"
+    VOICE_RENDER_COMPLETED = "voice_render_completed"
+    SCENE_RENDER_STARTED = "scene_render_started"
+    SCENE_RENDER_COMPLETED = "scene_render_completed"
+    THUMBNAIL_RENDER_COMPLETED = "thumbnail_render_completed"
+    SUBTITLE_EXPORT_COMPLETED = "subtitle_export_completed"
+    LONG_FORM_RENDER_COMPLETED = "long_form_render_completed"
+    SHORT_RENDER_COMPLETED = "short_render_completed"
+    RENDER_VALIDATION_COMPLETED = "render_validation_completed"
+    RENDER_COMPLETED = "render_completed"
+    RENDER_FAILED = "render_failed"
+    FOUNDER_REVIEW_REQUIRED = "founder_review_required"
+    INTELLIGENCE_STARTED = "intelligence_started"
+    INTELLIGENCE_STAGE_STARTED = "intelligence_stage_started"
+    INTELLIGENCE_STAGE_COMPLETED = "intelligence_stage_completed"
+    INTELLIGENCE_STAGE_FAILED = "intelligence_stage_failed"
+    INTELLIGENCE_COMPLETED = "intelligence_completed"
 
 
 class RuntimeEventSeverity(StrEnum):
@@ -145,6 +165,8 @@ class RuntimeStatistics(AuraBaseModel):
     pending_decisions: int = Field(ge=0)
     total_events: int = Field(ge=0)
     production_packages: int = Field(default=0, ge=0)
+    render_exports: int = Field(default=0, ge=0)
+    intelligence_packages: int = Field(default=0, ge=0)
 
 
 class RuntimeProductionState(AuraBaseModel):
@@ -168,6 +190,55 @@ class RuntimeProductionState(AuraBaseModel):
         return validated
 
 
+class RuntimeRenderState(AuraBaseModel):
+    """Truthful runtime projection for a local review render."""
+
+    production_package_id: UUID
+    manifest_id: UUID
+    status: str = Field(min_length=1, max_length=100)
+    artifact_count: int = Field(ge=0)
+    review_required: bool = True
+    published: bool = False
+    output_root: str = Field(min_length=1, max_length=2000)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def preserve_local_review_safety(self) -> "RuntimeRenderState":
+        if self.published or not self.review_required:
+            raise ValueError("Runtime renders must remain unpublished and review-required.")
+        return self
+
+    @field_validator("updated_at")
+    @classmethod
+    def validate_render_time(cls, value: datetime) -> datetime:
+        validated = _validate_aware(value)
+        if validated is None:
+            raise ValueError("updated_at is required.")
+        return validated
+
+
+class RuntimeIntelligenceState(AuraBaseModel):
+    """Minimal runtime projection for an Intelligence package."""
+
+    package_id: UUID
+    mission_id: UUID | None = None
+    workflow_id: UUID
+    niche: str = Field(min_length=1, max_length=500)
+    opportunity_score: float = Field(ge=0, le=100)
+    retention_score: float = Field(ge=0, le=100)
+    deterministic: bool = True
+    report_count: int = Field(default=6, ge=0)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("updated_at")
+    @classmethod
+    def validate_intelligence_time(cls, value: datetime) -> datetime:
+        validated = _validate_aware(value)
+        if validated is None:
+            raise ValueError("updated_at is required.")
+        return validated
+
+
 class RuntimeSnapshot(AuraBaseModel):
     mode: RuntimeMode
     generated_at: datetime = Field(default_factory=utc_now)
@@ -179,6 +250,10 @@ class RuntimeSnapshot(AuraBaseModel):
     recent_events: list[RuntimeEvent] = Field(default_factory=list)
     system_health: dict[str, RuntimeHealthComponent] = Field(default_factory=dict)
     production_packages: list[RuntimeProductionState] = Field(default_factory=list)
+    render_exports: list[RuntimeRenderState] = Field(default_factory=list)
+    intelligence_packages: list[RuntimeIntelligenceState] = Field(
+        default_factory=list
+    )
 
     @field_validator("generated_at")
     @classmethod

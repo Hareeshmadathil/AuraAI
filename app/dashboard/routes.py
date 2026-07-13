@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.dashboard.models import DashboardSnapshot
@@ -160,6 +161,56 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             template_name="production.html",
             page_title="Production",
             active_path="/production",
+        )
+
+    @router.get("/intelligence", response_class=HTMLResponse)
+    def intelligence_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render all deterministic Intelligence reports."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="intelligence.html",
+            page_title="Intelligence",
+            active_path="/intelligence",
+        )
+
+    @router.get("/renders", response_class=HTMLResponse)
+    def renders_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render local-review artifacts or a neutral empty state."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="renders.html",
+            page_title="Renders",
+            active_path="/renders",
+        )
+
+    @router.get("/artifacts/{artifact_id}")
+    def render_artifact(
+        artifact_id: UUID,
+        service: DashboardServiceDependency,
+    ) -> FileResponse:
+        """Serve a registered artifact ID; arbitrary paths are never accepted."""
+
+        artifact = service.get_render_artifact(artifact_id)
+        if artifact is None:
+            raise HTTPException(status_code=404, detail="Render artifact not found.")
+        inline_types = {"video/mp4", "image/png", "image/jpeg"}
+        return FileResponse(
+            artifact.path,
+            media_type=artifact.mime_type,
+            filename=artifact.path.name,
+            content_disposition_type=(
+                "inline" if artifact.mime_type in inline_types else "attachment"
+            ),
         )
 
     @router.get("/research", response_class=HTMLResponse)

@@ -26,6 +26,8 @@ from runtime_engine.models import (
     RuntimeMissionState,
     RuntimeMode,
     RuntimeProductionState,
+    RuntimeRenderState,
+    RuntimeIntelligenceState,
     RuntimeSnapshot,
     RuntimeStatistics,
     RuntimeWorkflowState,
@@ -44,6 +46,8 @@ class RuntimeStateManager:
             "runtime": RuntimeHealthComponent(status="operational")
         }
         self._production_packages: dict[UUID, RuntimeProductionState] = {}
+        self._render_exports: dict[UUID, RuntimeRenderState] = {}
+        self._intelligence_packages: dict[UUID, RuntimeIntelligenceState] = {}
 
     @property
     def mode(self) -> RuntimeMode:
@@ -266,6 +270,65 @@ class RuntimeStateManager:
 
         return tuple(self._production_packages.values())
 
+    def register_render_result(
+        self,
+        result: Any,
+        *,
+        replace: bool = False,
+    ) -> RuntimeRenderState:
+        """Register a local render projection without importing render models."""
+
+        package_id = result.production_package_id
+        if package_id in self._render_exports and not replace:
+            raise StorageError("Render result is already registered.")
+        manifest = result.export_manifest
+        state = RuntimeRenderState(
+            production_package_id=package_id,
+            manifest_id=manifest.manifest_id,
+            status=manifest.overall_status.value,
+            artifact_count=len(result.exported_artifacts),
+            review_required=manifest.review_required,
+            published=any(
+                artifact.published for artifact in result.exported_artifacts
+            ),
+            output_root=str(manifest.settings.output_root),
+        )
+        self._render_exports[package_id] = state
+        return state
+
+    def list_render_states(self) -> tuple[RuntimeRenderState, ...]:
+        """Return registered local render projections."""
+
+        return tuple(self._render_exports.values())
+
+    def register_intelligence_package(
+        self,
+        package: Any,
+        *,
+        replace: bool = False,
+    ) -> RuntimeIntelligenceState:
+        """Register Intelligence output without coupling runtime to its model."""
+
+        if package.package_id in self._intelligence_packages and not replace:
+            raise StorageError("Intelligence package is already registered.")
+        state = RuntimeIntelligenceState(
+            package_id=package.package_id,
+            mission_id=package.mission_id,
+            workflow_id=package.workflow_id,
+            niche=package.niche,
+            opportunity_score=package.trend_report.opportunity_score,
+            retention_score=package.hook_analysis.retention_score,
+            deterministic=package.deterministic,
+            report_count=6,
+        )
+        self._intelligence_packages[package.package_id] = state
+        return state
+
+    def list_intelligence_states(self) -> tuple[RuntimeIntelligenceState, ...]:
+        """Return registered Intelligence projections."""
+
+        return tuple(self._intelligence_packages.values())
+
     def build_statistics(self) -> RuntimeStatistics:
         mission_states = tuple(self._missions.values())
         workflow_states = tuple(self._workflows.values())
@@ -282,6 +345,8 @@ class RuntimeStateManager:
             pending_decisions=sum(d.outcome == DecisionOutcome.PENDING for d in self._decisions.values()),
             total_events=self.event_bus.count(),
             production_packages=len(self._production_packages),
+            render_exports=len(self._render_exports),
+            intelligence_packages=len(self._intelligence_packages),
         )
 
     def snapshot(self, recent_event_limit: int = 50) -> RuntimeSnapshot:
@@ -295,6 +360,8 @@ class RuntimeStateManager:
             recent_events=list(self.event_bus.recent(recent_event_limit)),
             system_health=dict(self._health),
             production_packages=list(self._production_packages.values()),
+            render_exports=list(self._render_exports.values()),
+            intelligence_packages=list(self._intelligence_packages.values()),
         )
 
     @staticmethod

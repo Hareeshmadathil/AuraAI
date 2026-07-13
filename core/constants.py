@@ -111,6 +111,7 @@ class DepartmentName(StrEnum):
     EXECUTIVE = "executive"
     STRATEGY = "strategy"
     RESEARCH = "research"
+    INTELLIGENCE = "intelligence"
     MARKETING = "marketing"
     EDITORIAL = "editorial"
     PRODUCTION = "production"

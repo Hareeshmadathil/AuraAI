@@ -28,6 +28,13 @@ from agents.specialists.storyboard_artist import StoryboardArtist
 from agents.specialists.thumbnail_designer import ThumbnailDesigner
 from agents.specialists.video_editor import VideoEditor
 from agents.specialists.voice_artist import VoiceArtist
+from agents.specialists.intelligence_analysts import (
+    AudienceAnalyst,
+    CompetitorAnalyst,
+    RetentionEngineer,
+    ThumbnailAnalyst,
+    TrendAnalyst,
+)
 
 __all__ = [
     "TrendCandidate",
@@ -50,4 +57,9 @@ __all__ = [
     "ThumbnailDesigner",
     "VideoEditor",
     "VoiceArtist",
+    "AudienceAnalyst",
+    "CompetitorAnalyst",
+    "RetentionEngineer",
+    "ThumbnailAnalyst",
+    "TrendAnalyst",
 ]

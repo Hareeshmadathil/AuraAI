@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block heading %}Intelligence Department{% endblock %}
+{% block content %}
+{% if snapshot.intelligence %}
+{% set intel = snapshot.intelligence %}
+<section class="panel intelligence-hero">
+    <div><p class="eyebrow">Deterministic pre-production analysis</p><h2>{{ intel.niche }}</h2></div>
+    <span class="demo-badge">SAMPLE · NO LIVE DATA</span>
+</section>
+<div class="intelligence-grid">
+    <section class="panel"><p class="eyebrow">Trend report</p><h2>{{ intel.trend_report.direction.value | title }}</h2><p>Opportunity score: {{ intel.trend_report.opportunity_score }}</p><ul>{% for item in intel.trend_report.signals %}<li>{{ item }}</li>{% endfor %}</ul></section>
+    <section class="panel"><p class="eyebrow">Competitor report</p><h2>Content gaps</h2><ul>{% for item in intel.competitor_report.content_gaps %}<li>{{ item }}</li>{% endfor %}</ul><p>{{ intel.competitor_report.differentiation_strategy }}</p></section>
+    <section class="panel"><p class="eyebrow">Audience persona</p><h2>{{ intel.audience_persona.persona_name }}</h2><p>{{ intel.audience_persona.description }}</p><ul>{% for item in intel.audience_persona.pain_points %}<li>{{ item }}</li>{% endfor %}</ul></section>
+    <section class="panel"><p class="eyebrow">SEO report</p><h2>{{ intel.seo_report.primary_keyword }}</h2><ul>{% for item in intel.seo_report.secondary_keywords %}<li>{{ item }}</li>{% endfor %}</ul><p>{{ intel.seo_report.search_intent }}</p></section>
+    <section class="panel"><p class="eyebrow">Hook analysis</p><h2>Recommended hook</h2><blockquote>{{ intel.hook_analysis.recommended_hook }}</blockquote><p>Retention score: {{ intel.hook_analysis.retention_score }}</p></section>
+    <section class="panel"><p class="eyebrow">Thumbnail analysis</p><h2>Recommended concept</h2><p>{{ intel.thumbnail_analysis.recommended_concept }}</p><p>Clarity score: {{ intel.thumbnail_analysis.clarity_score }}</p></section>
+</div>
+{% else %}
+<section class="panel empty-state"><h2>No Intelligence package supplied</h2><p>Run the deterministic Intelligence pipeline or inject a typed package.</p></section>
+{% endif %}
+{% endblock %}

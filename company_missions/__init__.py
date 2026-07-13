@@ -20,6 +20,14 @@ from company_missions.content_production import (
     create_content_production_demo_dashboard_service,
     create_content_production_pipeline,
 )
+from company_missions.local_render_pilot import (
+    create_local_render_demo_dashboard_service,
+    create_review_ready_production_package,
+    run_local_render_pilot,
+)
+from company_missions.intelligence_analysis import (
+    create_intelligence_demo_dashboard_service,
+)
 
 __all__ = [
     "NicheCandidateInput",
@@ -31,7 +39,11 @@ __all__ = [
     "create_content_production_demo_dashboard_service",
     "create_content_production_pipeline",
     "create_niche_discovery_demo_dashboard_service",
+    "create_local_render_demo_dashboard_service",
+    "create_intelligence_demo_dashboard_service",
+    "create_review_ready_production_package",
     "create_sample_niche_candidates",
     "create_sample_niche_discovery_input",
     "create_sample_production_input",
+    "run_local_render_pilot",
 ]

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block heading %}Local Render Review{% endblock %}
+{% block content %}
+<section class="panel" aria-labelledby="render-heading">
+    <div class="section-heading">
+        <div><p class="eyebrow">Production v2</p><h2 id="render-heading">Rendered artifacts</h2></div>
+        {% if snapshot.render %}<span class="review-badge">REVIEW REQUIRED · NOT PUBLISHED</span>{% endif %}
+    </div>
+    {% if snapshot.render %}
+    <dl class="render-summary">
+        <div><dt>Status</dt><dd>{{ snapshot.render.status | replace('_', ' ') | title }}</dd></div>
+        <div><dt>Engine</dt><dd>{{ snapshot.render.engine | upper }}</dd></div>
+        <div><dt>Artifacts</dt><dd>{{ snapshot.render.artifacts | length }}</dd></div>
+        <div><dt>Publishing</dt><dd>Disabled</dd></div>
+    </dl>
+    <div class="artifact-grid">
+        {% for artifact in snapshot.render.artifacts %}
+        <article class="artifact-card">
+            <p class="eyebrow">{{ artifact.artifact_type | replace('_', ' ') }}</p>
+            <h3>{{ artifact.file_name }}</h3>
+            <p>{{ (artifact.size_bytes / 1024) | round(1) }} KB{% if artifact.width %} · {{ artifact.width }}×{{ artifact.height }}{% endif %}</p>
+            <p class="checksum">SHA-256 {{ artifact.checksum_sha256 }}</p>
+            <a href="/artifacts/{{ artifact.artifact_id }}">Open local artifact</a>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><h3>No local render supplied</h3><p>Run the explicit review pilot and inject its result to inspect artifacts here.</p></div>
+    {% endif %}
+</section>
+{% endblock %}

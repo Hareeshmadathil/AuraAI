@@ -6,15 +6,33 @@ from dataclasses import dataclass
 from uuid import NAMESPACE_URL, uuid5
 
 from agents.base_employee import BaseEmployee
-from agents.directors import ResearchDirector, StrategyDirector
+from agents.directors import (
+    ProductionDirector,
+    ResearchDirector,
+    SEODirector,
+    StrategyDirector,
+)
 from agents.executive import AuraCEO, AuraCOO
 from agents.specialists import (
+    AudienceAnalyst,
+    CompetitorAnalyst,
     InstagramManager,
+    QualityController,
+    RetentionEngineer,
     SEOSpecialist,
+    ScriptWriter,
+    ShortsEditor,
+    StoryboardArtist,
     TikTokManager,
+    ThumbnailAnalyst,
+    ThumbnailDesigner,
     TrendHunter,
+    TrendAnalyst,
+    VideoEditor,
+    VoiceArtist,
     YouTubeManager,
 )
+from intelligence.providers import DeterministicIntelligenceProvider
 from marketing import MarketingDirector
 
 
@@ -43,12 +61,15 @@ class CompanyRoster:
 def create_company_roster() -> CompanyRoster:
     """Construct the current AuraAI company from existing classes."""
 
+    intelligence_provider = DeterministicIntelligenceProvider()
     roster = CompanyRoster(
         executives=(AuraCEO(), AuraCOO()),
         directors=(
             StrategyDirector(),
             ResearchDirector(),
             MarketingDirector(),
+            SEODirector(intelligence_provider),
+            ProductionDirector(),
         ),
         specialists=(
             TrendHunter(),
@@ -56,6 +77,18 @@ def create_company_roster() -> CompanyRoster:
             YouTubeManager(),
             InstagramManager(),
             TikTokManager(),
+            TrendAnalyst(intelligence_provider),
+            CompetitorAnalyst(intelligence_provider),
+            AudienceAnalyst(intelligence_provider),
+            RetentionEngineer(intelligence_provider),
+            ThumbnailAnalyst(intelligence_provider),
+            ScriptWriter(),
+            StoryboardArtist(),
+            VoiceArtist(),
+            ThumbnailDesigner(),
+            ShortsEditor(),
+            VideoEditor(),
+            QualityController(),
         ),
     )
 

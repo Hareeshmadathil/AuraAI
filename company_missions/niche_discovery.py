@@ -10,7 +10,6 @@ from agents.base_employee import BaseEmployee
 from agents.directors import ResearchDirector, StrategyDirector
 from agents.executive import AuraCEO, AuraCOO
 from agents.specialists import TrendHunter, TrendOpportunity
-from app.dashboard.models import DashboardMode
 from app.dashboard.service import DashboardService
 from core import (
     DecisionOutcome,
@@ -23,14 +22,12 @@ from core import (
     utc_now,
 )
 from marketing import MarketingDirector
-from runtime_engine.dashboard_adapter import create_dashboard_service_from_runtime
 from runtime_engine.event_bus import RuntimeEventBus
 from runtime_engine.mission_runner import MissionRunner
 from runtime_engine.models import RuntimeEventSeverity, RuntimeEventType, RuntimeMode
 from runtime_engine.orchestrator import RuntimeOrchestrator
 from runtime_engine.state_manager import RuntimeStateManager
 
-from company_missions.fixtures import create_sample_niche_discovery_input
 from company_missions.models import (
     NicheDiscoveryInput,
     NicheDiscoveryResult,
@@ -493,7 +490,23 @@ class NicheDiscoveryPipeline:
 
 
 def create_niche_discovery_demo_dashboard_service() -> DashboardService:
-    """Execute the sample pipeline and adapt its runtime snapshot."""
+    """Build the cumulative dashboard through the niche-discovery stage."""
+
+    from company_missions.unified_dashboard import (
+        create_unified_dashboard_service,
+    )
+    from app.runtime.unified_context import DashboardContextStage
+
+    return create_unified_dashboard_service(
+        DashboardContextStage.NICHE_DISCOVERY
+    )
+
+
+def create_niche_discovery_pipeline() -> tuple[
+    NicheDiscoveryPipeline,
+    RuntimeOrchestrator,
+]:
+    """Create an isolated deterministic niche-discovery pipeline."""
 
     bus = RuntimeEventBus()
     state = RuntimeStateManager(bus)
@@ -509,14 +522,4 @@ def create_niche_discovery_demo_dashboard_service() -> DashboardService:
         strategy_director=StrategyDirector(),
         marketing_director=MarketingDirector(),
     )
-    result = pipeline.run(
-        create_sample_niche_discovery_input(),
-        user_confirmed=True,
-    )
-    if not result.success:
-        raise RuntimeError(result.message)
-    return create_dashboard_service_from_runtime(
-        orchestrator.snapshot(),
-        mode=DashboardMode.DEMO,
-        data_label="NICHE DISCOVERY DEMO / DETERMINISTIC SAMPLE DATA",
-    )
+    return pipeline, orchestrator

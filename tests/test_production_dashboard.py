@@ -28,6 +28,21 @@ def test_production_api_contains_additive_structured_summary() -> None:
     assert production["quality_score"] > 90
     assert production["assembly_status"] == "not_rendered"
     assert production["media_rendered"] is False
+    assert data["niche_discovery"] is not None
+    assert data["intelligence"] is not None
+    assert data["missions"]
+    assert data["workflows"]
+    assert data["recent_decisions"]
+    assert {employee["job_title"] for employee in data["employees"]} >= {
+        "Production Director",
+        "Script Writer",
+        "Storyboard Artist",
+        "Voice Artist",
+        "Thumbnail Designer",
+        "Shorts Editor",
+        "Video Editor",
+        "Production Quality Controller",
+    }
 
 
 def test_existing_empty_mode_and_routes_remain_unaffected() -> None:

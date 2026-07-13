@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 from pydantic import Field
@@ -18,6 +19,7 @@ from core.constants import (
     TaskPriority,
 )
 from core.models import AuraBaseModel, utc_now
+from intelligence.models import IntelligencePackage
 
 
 class DashboardMode(StrEnum):
@@ -162,6 +164,36 @@ class ProductionStatusSummary(AuraBaseModel):
     media_rendered: bool = False
 
 
+class RenderArtifactSummary(AuraBaseModel):
+    """Safe metadata for one downloadable local review artifact."""
+
+    artifact_id: UUID
+    artifact_type: str
+    file_name: str = Field(min_length=1, max_length=500)
+    mime_type: str = Field(min_length=1, max_length=200)
+    size_bytes: int = Field(ge=0)
+    duration_seconds: float | None = Field(default=None, ge=0)
+    width: int | None = Field(default=None, gt=0)
+    height: int | None = Field(default=None, gt=0)
+    checksum_sha256: str
+    review_required: bool = True
+    published: bool = False
+
+
+class RenderStatusSummary(AuraBaseModel):
+    """Dashboard projection for the explicit local render result."""
+
+    production_package_id: UUID
+    manifest_id: UUID
+    status: str
+    engine: str
+    artifacts: list[RenderArtifactSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    review_required: bool = True
+    publish_allowed: bool = False
+    sample_data: bool = True
+
+
 class DashboardSnapshot(AuraBaseModel):
     """Immutable point-in-time view of AuraAI operating state."""
 
@@ -191,3 +223,6 @@ class DashboardSnapshot(AuraBaseModel):
         default_factory=SystemHealthSummary
     )
     production: ProductionStatusSummary | None = None
+    render: RenderStatusSummary | None = None
+    intelligence: IntelligencePackage | None = None
+    niche_discovery: dict[str, Any] | None = None

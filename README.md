@@ -91,3 +91,53 @@ The dashboard currently uses injected in-memory state. It has no
 database, authentication, live refresh, external platform connection,
 or publishing capability. Do not expose this unauthenticated local
 server to a public network.
+
+## Production v2 local render pilot
+
+Production v2 can turn the deterministic, quality-checked Production v1
+package into a bounded set of local review artifacts. It detects locally
+installed FFmpeg, FFprobe, and Windows speech support at run time. It does
+not download assets, call external services, upload media, or publish.
+
+Run the pilot only with explicit render approval:
+
+```powershell
+python -m production.rendering.pipeline --demo --founder-render-approved --output-root outputs/production
+```
+
+If local speech is unavailable, the render remains blocked unless the
+operator explicitly adds `--silent-fallback`. That fallback is visibly and
+structurally labelled as silent. Existing package directories are protected
+unless `--overwrite` is supplied. Outputs include a review MP4, one vertical
+short, a PNG thumbnail, WAV narration, UTF-8 SRT/VTT sidecars, a JSON render
+manifest, and SHA-256 metadata beneath the ignored `outputs/production/`
+directory. Intermediate scene clips are removed after successful assembly
+unless `--keep-intermediates` is supplied.
+
+All artifacts are marked sample data, review-required, and not published.
+The `/renders` dashboard route displays only explicitly injected artifact
+metadata. `/artifacts/{artifact_id}` accepts a registered UUID rather than a
+filesystem path and refuses files outside the configured output root.
+
+## Intelligence Department v1
+
+The deterministic Intelligence stage sits between Research and Production.
+It coordinates Trend Analyst, Competitor Analyst, Audience Analyst, SEO
+Director, Retention Engineer, and Thumbnail Analyst employees through the
+existing `BaseEmployee` task lifecycle and Runtime Engine.
+
+Run its local dashboard demonstration with:
+
+```powershell
+python -m uvicorn app.main:create_intelligence_demo_app --factory --reload
+```
+
+Open `http://127.0.0.1:8000/intelligence`. The page shows the typed trend,
+competitor, audience, SEO, hook, and thumbnail reports. All analysis comes
+from an injected deterministic provider. It does not perform live research,
+call platform APIs, require credentials, or guarantee reach or retention.
+
+When the standard content-production mission receives a niche-discovery
+result, the factory-backed flow is now Research → Intelligence → Production.
+Direct `ProductionInput` and prebuilt `IntelligencePackage` inputs remain
+supported. Rendering remains an explicit, separately approved local step.

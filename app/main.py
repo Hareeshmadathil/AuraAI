@@ -87,4 +87,33 @@ def create_content_production_demo_app() -> FastAPI:
     )
 
 
+def create_intelligence_demo_app() -> FastAPI:
+    """Create the deterministic Intelligence Department demo app."""
+
+    from company_missions import create_intelligence_demo_dashboard_service
+
+    return create_app(
+        dashboard_service=create_intelligence_demo_dashboard_service()
+    )
+
+
+def create_local_render_demo_app(
+    local_render_result: object | None = None,
+    production_package: object | None = None,
+) -> FastAPI:
+    """Create the local-render demo as a zero-argument Uvicorn factory.
+
+    Optional arguments preserve the original injection-based calling style.
+    """
+
+    from company_missions import create_local_render_demo_dashboard_service
+
+    return create_app(
+        dashboard_service=create_local_render_demo_dashboard_service(
+            local_render_result,
+            production_package,
+        )
+    )
+
+
 app = create_app()

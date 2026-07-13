@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -45,6 +45,9 @@ from runtime_engine.models import (
 )
 from runtime_engine.orchestrator import RuntimeOrchestrator
 
+if TYPE_CHECKING:
+    from intelligence.pipeline import IntelligencePipeline
+
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -67,6 +70,7 @@ class ProductionPipeline:
         artifact_store: ArtifactStore | None = None,
         visual_plan_builder: VisualPlanBuilder | None = None,
         subtitle_engine: SubtitleEngine | None = None,
+        intelligence_pipeline: IntelligencePipeline | None = None,
     ) -> None:
         self.production_director = production_director
         self.script_writer = script_writer
@@ -80,6 +84,7 @@ class ProductionPipeline:
         self.artifact_store = artifact_store
         self.visual_plan_builder = visual_plan_builder or VisualPlanBuilder()
         self.subtitle_engine = subtitle_engine or SubtitleEngine()
+        self.intelligence_pipeline = intelligence_pipeline
 
     @property
     def employees(self) -> tuple[BaseEmployee, ...]:

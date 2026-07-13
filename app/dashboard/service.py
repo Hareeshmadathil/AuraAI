@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 from typing import Any
+from uuid import UUID
 
 from app.dashboard.models import (
     ActivityEventSummary,
@@ -18,6 +19,8 @@ from app.dashboard.models import (
     MissionStatusSummary,
     SystemHealthSummary,
     ProductionStatusSummary,
+    RenderArtifactSummary,
+    RenderStatusSummary,
     WorkflowStatusSummary,
 )
 from core.constants import (
@@ -31,6 +34,8 @@ from core.decision import DecisionRecord
 from core.mission import MissionRecord
 from core.models import AgentIdentity, WorkflowRecord
 from production.models import ProductionPackage
+from production.rendering.models import LocalRenderResult, RenderedArtifact
+from intelligence.models import IntelligencePackage
 
 
 class DashboardService:
@@ -48,6 +53,9 @@ class DashboardService:
         system_health: SystemHealthSummary | None = None,
         activity: Iterable[ActivityEventSummary] = (),
         production_package: ProductionPackage | ProductionStatusSummary | None = None,
+        local_render_result: LocalRenderResult | None = None,
+        intelligence_package: IntelligencePackage | None = None,
+        niche_discovery: dict[str, Any] | None = None,
     ) -> None:
         """Store explicit state collections for snapshot generation."""
 
@@ -60,6 +68,10 @@ class DashboardService:
         self._system_health = system_health or SystemHealthSummary()
         self._activity = tuple(activity)
         self._production_package = production_package
+        self._local_render_result = local_render_result
+        self._render_artifacts = self._index_render_artifacts(local_render_result)
+        self._intelligence_package = intelligence_package
+        self._niche_discovery = niche_discovery
 
     def build_snapshot(self) -> DashboardSnapshot:
         """Create a validated point-in-time dashboard snapshot."""
@@ -132,6 +144,64 @@ class DashboardService:
             activity=self._build_activity(sorted_decisions),
             system_health=self._system_health,
             production=self._summarize_production(self._production_package),
+            render=self._summarize_render(self._local_render_result),
+            intelligence=self._intelligence_package,
+            niche_discovery=self._niche_discovery,
+        )
+
+    def get_render_artifact(self, artifact_id: UUID) -> RenderedArtifact | None:
+        """Resolve only a registered artifact inside its configured output root."""
+
+        artifact = self._render_artifacts.get(artifact_id)
+        if artifact is None or self._local_render_result is None:
+            return None
+        root = self._local_render_result.export_manifest.settings.output_root.resolve()
+        try:
+            artifact.path.resolve().relative_to(root)
+        except ValueError:
+            return None
+        return artifact if artifact.path.is_file() else None
+
+    @staticmethod
+    def _index_render_artifacts(
+        result: LocalRenderResult | None,
+    ) -> dict[UUID, RenderedArtifact]:
+        if result is None:
+            return {}
+        return {artifact.artifact_id: artifact for artifact in result.exported_artifacts}
+
+    @staticmethod
+    def _summarize_render(
+        result: LocalRenderResult | None,
+    ) -> RenderStatusSummary | None:
+        if result is None:
+            return None
+        manifest = result.export_manifest
+        return RenderStatusSummary(
+            production_package_id=result.production_package_id,
+            manifest_id=manifest.manifest_id,
+            status=manifest.overall_status.value,
+            engine=manifest.render_engine.value,
+            artifacts=[
+                RenderArtifactSummary(
+                    artifact_id=artifact.artifact_id,
+                    artifact_type=artifact.artifact_type.value,
+                    file_name=artifact.path.name,
+                    mime_type=artifact.mime_type,
+                    size_bytes=artifact.size_bytes,
+                    duration_seconds=artifact.duration_seconds,
+                    width=artifact.width,
+                    height=artifact.height,
+                    checksum_sha256=artifact.checksum_sha256 or "unavailable",
+                    review_required=artifact.review_required,
+                    published=artifact.published,
+                )
+                for artifact in result.exported_artifacts
+            ],
+            warnings=manifest.warnings,
+            review_required=manifest.review_required,
+            publish_allowed=manifest.publish_allowed,
+            sample_data=manifest.settings.sample_data,
         )
 
     @staticmethod
