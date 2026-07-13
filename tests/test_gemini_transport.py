@@ -56,7 +56,9 @@ def test_http_transport_uses_injected_executor_and_safe_json() -> None:
     )
     assert "?key=" not in str(observed["url"])
     generation = observed["payload"]["generationConfig"]
-    assert generation["responseFormat"]["text"]["mimeType"] == "application/json"
+    assert generation["responseMimeType"] == "application/json"
+    assert generation["responseJsonSchema"] == build_request().response_schema
+    assert "responseFormat" not in generation
     assert "responseSchema" not in generation
     assert "temperature" not in generation
     assert "topP" not in generation
@@ -88,6 +90,34 @@ def test_founder_smoke_diagnostics_classify_400_and_discard_body() -> None:
 
     assert response.status_code == 400
     assert response.safe_error_code == "unsupported_generation_parameter"
+    assert response.response_body == ""
+
+
+def test_founder_smoke_classifies_unsupported_response_format() -> None:
+    private_body = json.dumps(
+        {
+            "error": {
+                "code": 400,
+                "message": (
+                    "Invalid JSON payload received. Unknown name "
+                    "'responseFormat' at generation_config."
+                ),
+                "status": "INVALID_ARGUMENT",
+            }
+        }
+    ).encode()
+    transport = HttpGeminiTransport(
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        api_key="fake-response-format-key",
+        executor=lambda *_: HttpExecutionResult(400, private_body, {}),
+    )
+
+    response = transport.send(
+        build_request(GeminiConfig(founder_smoke_test_diagnostics=True)),
+        timeout_seconds=1,
+    )
+
+    assert response.safe_error_code == "unsupported_response_format"
     assert response.response_body == ""
 
 

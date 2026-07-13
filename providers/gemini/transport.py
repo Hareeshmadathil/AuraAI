@@ -286,12 +286,8 @@ class HttpGeminiTransport:
     def _request_payload(request: GeminiRequest) -> dict[str, object]:
         generation_config: dict[str, object] = {
             "maxOutputTokens": request.maximum_output_tokens,
-            "responseFormat": {
-                "text": {
-                    "mimeType": "application/json",
-                    "schema": request.response_schema,
-                }
-            },
+            "responseMimeType": "application/json",
+            "responseJsonSchema": request.response_schema,
         }
         if not request.model.startswith("gemini-3.5"):
             generation_config.update(
