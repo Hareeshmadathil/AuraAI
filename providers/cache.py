@@ -15,11 +15,16 @@ from providers.provider_result import ProviderResult
 def provider_cache_key(
     capability: ProviderCapability,
     prompt: ProviderPrompt,
+    provider_name: str = "",
 ) -> str:
     """Build a stable hash without persisting or logging prompt content."""
 
     payload = json.dumps(
-        {"capability": capability.value, "prompt": prompt.model_dump(mode="json")},
+        {
+            "capability": capability.value,
+            "provider": provider_name,
+            "prompt": prompt.model_dump(mode="json"),
+        },
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")

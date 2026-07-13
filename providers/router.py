@@ -40,6 +40,7 @@ class ProviderRouter:
         event_bus: RuntimeEventBus | None = None,
         safety_validator: SafetyValidator | None = None,
         response_validator: ResponseValidator | None = None,
+        fallback_enabled: bool = True,
     ) -> None:
         self.registry = registry
         self.fallback = fallback or DeterministicProvider()
@@ -49,6 +50,9 @@ class ProviderRouter:
         self.event_bus = event_bus
         self.safety_validator = safety_validator or SafetyValidator()
         self.response_validator = response_validator or ResponseValidator()
+        self.fallback_enabled = fallback_enabled
+        self._cache_hits = 0
+        self._cache_hits_by_provider: dict[str, int] = {}
         self.logger = get_logger("providers.router")
 
     def route(
@@ -59,36 +63,75 @@ class ProviderRouter:
         """Return validated typed output, falling back on every provider failure."""
 
         self.safety_validator.validate_prompt(prompt)
-        cache_key = provider_cache_key(capability, prompt)
-        if self.cache is not None:
-            cached = self.cache.get(cache_key)
-            if cached is not None:
-                return ProviderResult[ProviderOutput].model_validate(cached)
-
+        provider: Provider | None = None
         try:
             provider = self.registry.resolve(capability)
+            self._check_ready(provider)
             self._emit(
                 "PROVIDER_SELECTED",
                 f"Provider selected for {capability.value}.",
                 provider.descriptor.name,
             )
-            result = self._call(provider, capability, prompt, fallback_used=False)
+            self.rate_limiter.acquire(provider.descriptor.name)
+            cache_key = provider_cache_key(
+                capability,
+                prompt,
+                provider.descriptor.name,
+            )
+            cached = self._cached(cache_key, provider.descriptor.name)
+            if cached is not None:
+                return cached
+            result = self._call(
+                provider,
+                capability,
+                prompt,
+                fallback_used=False,
+                acquire_rate=False,
+            )
         except Exception as error:
             self.logger.warning(
                 "Provider failed for capability %s; deterministic fallback selected (%s).",
                 capability.value,
                 error.__class__.__name__,
             )
+            safe_error_code = self._safe_error_code(error)
             self._emit(
                 "PROVIDER_FAILED",
                 f"Provider failed for {capability.value}; no prompt data retained.",
+                provider.descriptor.name if provider is not None else None,
+                safe_error_code=safe_error_code,
             )
+            if provider is not None:
+                recorder = getattr(provider, "record_fallback", None)
+                if callable(recorder):
+                    recorder(safe_error_code)
+            if not self.fallback_enabled:
+                raise
             self._emit(
                 "PROVIDER_FALLBACK",
                 f"Deterministic fallback selected for {capability.value}.",
                 self.fallback.descriptor.name,
             )
-            result = self._call(self.fallback, capability, prompt, fallback_used=True)
+            fallback_key = provider_cache_key(
+                capability,
+                prompt,
+                self.fallback.descriptor.name,
+            )
+            cached = self._cached(
+                fallback_key,
+                self.fallback.descriptor.name,
+            )
+            if cached is not None:
+                cached.fallback_used = True
+                cached.usage.fallback_used = True
+                return cached
+            result = self._call(
+                self.fallback,
+                capability,
+                prompt,
+                fallback_used=True,
+            )
+            cache_key = fallback_key
 
         if self.cache is not None:
             self.cache.set(cache_key, result)
@@ -102,32 +145,43 @@ class ProviderRouter:
     def build_state(self) -> ProviderState:
         """Project safe registry and metadata state for runtime/dashboard use."""
 
-        descriptors = list(self.registry.descriptors())
+        registered = list(self.registry.providers())
+        descriptors = [provider.descriptor for provider in registered]
         fallback_descriptor = self.fallback.descriptor
         if all(item.name != fallback_descriptor.name for item in descriptors):
             descriptors.append(fallback_descriptor)
         usage = list(self.usage_tracker.list_usage())
-        return ProviderState(
-            providers=descriptors,
-            health=[
-                ProviderHealth(
+        health: list[ProviderHealth] = []
+        providers_by_name = {
+            provider.descriptor.name: provider for provider in registered
+        }
+        for item in descriptors:
+            provider = providers_by_name.get(item.name)
+            health_builder = getattr(provider, "safe_health", None)
+            if callable(health_builder):
+                value = ProviderHealth.model_validate(health_builder())
+            else:
+                value = ProviderHealth(
                     name=item.name,
                     enabled=item.enabled,
-                    status=(
-                        "disabled"
-                        if not item.enabled
-                        else "placeholder"
-                        if item.kind.value == "stub"
-                        else "available"
+                    status="available" if item.enabled else "disabled",
+                    capabilities=sorted(
+                        item.capabilities,
+                        key=lambda capability: capability.value,
                     ),
-                    capabilities=sorted(item.capabilities, key=lambda value: value.value),
                     fallback=item.name == fallback_descriptor.name,
+                    model=item.model,
                 )
-                for item in descriptors
-            ],
+            value.fallback = item.name == fallback_descriptor.name
+            value.cache_hit_count = self._cache_hits_by_provider.get(item.name, 0)
+            health.append(value)
+        return ProviderState(
+            providers=descriptors,
+            health=health,
             usage=usage,
             cache_entries=self.cache.size() if self.cache is not None else 0,
             fallback_requests=sum(item.fallback_used for item in usage),
+            cache_hits=self._cache_hits,
         )
 
     def _call(
@@ -137,8 +191,10 @@ class ProviderRouter:
         prompt: ProviderPrompt,
         *,
         fallback_used: bool,
+        acquire_rate: bool = True,
     ) -> ProviderResult[ProviderOutput]:
-        self.rate_limiter.acquire(provider.descriptor.name)
+        if acquire_rate:
+            self.rate_limiter.acquire(provider.descriptor.name)
         started = perf_counter()
         result = provider.generate(capability, prompt)
         result.fallback_used = fallback_used
@@ -152,7 +208,45 @@ class ProviderRouter:
         self.usage_tracker.record(result.usage)
         return result
 
-    def _emit(self, event_name: str, message: str, provider: str | None = None) -> None:
+    @staticmethod
+    def _check_ready(provider: Provider) -> None:
+        checker = getattr(provider, "check_ready", None)
+        if callable(checker):
+            checker()
+
+    def _cached(
+        self,
+        cache_key: str,
+        provider_name: str,
+    ) -> ProviderResult[ProviderOutput] | None:
+        if self.cache is None:
+            return None
+        cached = self.cache.get(cache_key)
+        if cached is None:
+            return None
+        self._cache_hits += 1
+        self._cache_hits_by_provider[provider_name] = (
+            self._cache_hits_by_provider.get(provider_name, 0) + 1
+        )
+        value = ProviderResult[ProviderOutput].model_validate(cached)
+        value.usage.cache_hit = True
+        return value
+
+    @staticmethod
+    def _safe_error_code(error: Exception) -> str:
+        return str(
+            getattr(error, "details", {}).get("safe_error_code")
+            or getattr(error, "error_code", error.__class__.__name__)
+        )
+
+    def _emit(
+        self,
+        event_name: str,
+        message: str,
+        provider: str | None = None,
+        *,
+        safe_error_code: str | None = None,
+    ) -> None:
         if self.event_bus is None:
             return
         from runtime_engine.models import RuntimeEventType
@@ -160,5 +254,12 @@ class ProviderRouter:
         self.event_bus.emit(
             RuntimeEventType[event_name],
             message,
-            metadata={"provider": provider} if provider else {},
+            metadata={
+                **({"provider": provider} if provider else {}),
+                **(
+                    {"safe_error_code": safe_error_code}
+                    if safe_error_code
+                    else {}
+                ),
+            },
         )

@@ -198,11 +198,35 @@ Metadata, Audience, Analytics, Scene, Animation, and future Flow capabilities.
 Employees request typed capabilities and never import a vendor implementation.
 
 The local deterministic provider remains the default and fallback. The Gemini
-adapter is a disabled, credential-free stub: it does not read environment
-variables or perform network requests. Prompts are versioned typed objects;
-responses pass typed and safety validation. Optional caching and usage tracking
-are memory-only, and usage records contain metadata rather than prompt or
-response content.
+adapter is disabled by default and becomes live-capable only when an explicit
+composition root receives `enabled=True`, `allow_live_requests=True`, an
+injected API key, and an injected transport. Provider modules do not read
+environment variables, initialize clients at import time, or require the
+Google SDK. Prompts are versioned typed objects; responses pass transport,
+envelope, JSON, safety, schema, and AuraAI model validation.
+
+Google AI Pro consumer access is separate from Gemini API access, billing,
+project configuration, and quotas. Live use requires the appropriate Google AI
+Studio or Google Cloud API configuration. API keys must be supplied through a
+private runtime composition boundary and never as a visible CLI argument.
+
+Only prompt template metadata, a deterministic prompt hash, approximate size,
+token counts, latency, and safe status codes enter provider usage state. The
+redaction utilities are best-effort safeguards, not a guarantee that arbitrary
+sensitive input can always be detected. Cache and usage state remain in memory.
+
+Run the network-free smoke test with:
+
+```powershell
+python -m providers.gemini.provider --smoke-test --dry-run
+```
+
+A live smoke test additionally requires both `--enable-live` and
+`--founder-approved`, then requests the key through hidden interactive input.
+It is never run by tests or application import. Flow and video generation are
+not integrated, and provider advice cannot grant quality, rendering,
+distribution, or publishing approval. AuraAI performs no automatic publishing.
 
 The local dashboard exposes safe provider status at
-`http://127.0.0.1:8000/providers`. No credentials are required.
+`http://127.0.0.1:8000/providers`. Credentials, prompts, source documents, and
+raw responses are never included in the dashboard provider projection.

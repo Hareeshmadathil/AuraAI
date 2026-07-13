@@ -129,6 +129,7 @@ def test_rate_limit_fails_closed_without_sleeping() -> None:
         limiter.acquire("test")
 
 
-def test_gemini_config_has_no_credential_field() -> None:
-    assert "api_key" not in GeminiConfig.model_fields
+def test_gemini_config_credential_field_is_explicit_and_excluded() -> None:
+    assert "api_key" in GeminiConfig.model_fields
+    assert GeminiConfig.model_fields["api_key"].exclude is True
     assert "credentials" not in GeminiConfig.model_fields

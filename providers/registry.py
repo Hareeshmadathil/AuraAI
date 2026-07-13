@@ -45,3 +45,8 @@ class ProviderRegistry:
 
     def descriptors(self) -> tuple[ProviderDescriptor, ...]:
         return tuple(provider.descriptor for provider in self._providers.values())
+
+    def providers(self) -> tuple[Provider, ...]:
+        """Return registered provider instances for safe health projection."""
+
+        return tuple(self._providers.values())

@@ -1,5 +1,10 @@
 """Single public AI abstraction layer for AuraAI."""
 
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from providers.composition import create_provider_router
+
 from providers.base import (
     AnalyticsAdvisor, AnimationProvider, AudienceProvider, FlowProvider,
     HookProvider, ImagePromptProvider, MarketingProvider, MetadataProvider,
@@ -60,4 +65,15 @@ __all__ = [
     "ScriptProvider", "SEOOutput", "SEOProvider", "StoryOutput",
     "StoryProvider", "VideoPromptOutput", "VideoPromptProvider", "provider_cache_key",
     "build_department_prompt",
+    "create_provider_router",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Load the optional composition root without import-time coupling."""
+
+    if name == "create_provider_router":
+        from providers.composition import create_provider_router
+
+        return create_provider_router
+    raise AttributeError(name)

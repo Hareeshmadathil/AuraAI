@@ -11,9 +11,18 @@
         {% for provider in snapshot.providers.health %}
         <article class="info-card">
             <h3>{{ provider.name }}</h3>
-            <p>{{ provider.status | title }} · {{ 'Enabled' if provider.enabled else 'Disabled' }}</p>
+            <p>{{ provider.status | title }} &middot; {{ 'Enabled' if provider.enabled else 'Disabled' }}</p>
             <p>{{ provider.capabilities | length }} capabilities</p>
             <p>{{ 'Deterministic fallback' if provider.fallback else 'Registered provider' }}</p>
+            {% if provider.name == 'gemini' %}
+            <p>Configured: {{ 'Yes' if provider.configured else 'No' }}</p>
+            <p>Live access allowed: {{ 'Yes' if provider.live_requests_allowed else 'No' }}</p>
+            <p>Model: {{ provider.model or 'Not supplied' }}</p>
+            <p>Requests {{ provider.request_count }} &middot; Successes {{ provider.success_count }} &middot; Failures {{ provider.failure_count }} &middot; Fallbacks {{ provider.fallback_count }}</p>
+            <p>Cache hits {{ provider.cache_hit_count }} &middot; Tokens {{ provider.input_tokens }}/{{ provider.output_tokens }}</p>
+            <p>Average latency: {{ '%.2f' | format(provider.average_latency_ms) }} ms</p>
+            <p>Last safe error: {{ provider.last_safe_error_code or 'None' }}</p>
+            {% endif %}
         </article>
         {% endfor %}
     </div>
@@ -23,11 +32,15 @@
 </section>
 <section class="panel" aria-labelledby="provider-usage-title">
     <div class="section-heading"><h2 id="provider-usage-title">Usage and fallback</h2></div>
-    <p>Cache entries: {{ snapshot.providers.cache_entries }} · Fallback requests: {{ snapshot.providers.fallback_requests }}</p>
+    <p>Cache entries: {{ snapshot.providers.cache_entries }} &middot; Cache hits: {{ snapshot.providers.cache_hits }} &middot; Fallback requests: {{ snapshot.providers.fallback_requests }}</p>
     {% if snapshot.providers.usage %}
-    <div class="table-wrap"><table><thead><tr><th>Provider</th><th>Capability</th><th>Latency</th><th>Fallback</th></tr></thead><tbody>
-        {% for usage in snapshot.providers.usage %}<tr><td>{{ usage.provider }}</td><td>{{ usage.capability.value }}</td><td>{{ '%.2f' | format(usage.latency_ms) }} ms</td><td>{{ 'Yes' if usage.fallback_used else 'No' }}</td></tr>{% endfor %}
+    <div class="table-wrap"><table><thead><tr><th>Provider</th><th>Capability</th><th>Tokens</th><th>Latency</th><th>Fallback</th></tr></thead><tbody>
+        {% for usage in snapshot.providers.usage %}<tr><td>{{ usage.provider }}</td><td>{{ usage.capability.value }}</td><td>{{ usage.input_tokens }}/{{ usage.output_tokens }}</td><td>{{ '%.2f' | format(usage.latency_ms) }} ms</td><td>{{ 'Yes' if usage.fallback_used else 'No' }}</td></tr>{% endfor %}
     </tbody></table></div>
     {% else %}<p class="empty-state">No provider requests have been recorded.</p>{% endif %}
+</section>
+<section class="panel" aria-labelledby="provider-billing-title">
+    <div class="section-heading"><h2 id="provider-billing-title">Access and billing</h2></div>
+    <p>Google AI Pro consumer access and Gemini API billing, quotas, and project configuration are separate concerns. AuraAI live access remains disabled unless explicitly configured and founder-approved.</p>
 </section>
 {% endblock %}
