@@ -20,6 +20,7 @@ from core.constants import (
 )
 from core.models import AuraBaseModel, utc_now
 from intelligence.models import IntelligencePackage
+from creative_quality.models import CreativeQualityPackage
 
 
 class DashboardMode(StrEnum):
@@ -36,6 +37,25 @@ class EmployeeGroup(StrEnum):
     EXECUTIVE = "executive"
     DIRECTOR = "director"
     SPECIALIST = "specialist"
+
+
+_SPECIALIST_DIRECTOR_TITLES = frozenset({"Story Director"})
+
+
+def classify_employee_group(
+    department: DepartmentName,
+    job_title: str,
+) -> EmployeeGroup:
+    """Classify formal company level while preserving specialist titles."""
+
+    if department == DepartmentName.EXECUTIVE:
+        return EmployeeGroup.EXECUTIVE
+    if (
+        job_title.endswith("Director")
+        and job_title not in _SPECIALIST_DIRECTOR_TITLES
+    ):
+        return EmployeeGroup.DIRECTOR
+    return EmployeeGroup.SPECIALIST
 
 
 class ActivityEventType(StrEnum):
@@ -226,3 +246,4 @@ class DashboardSnapshot(AuraBaseModel):
     render: RenderStatusSummary | None = None
     intelligence: IntelligencePackage | None = None
     niche_discovery: dict[str, Any] | None = None
+    creative_quality: CreativeQualityPackage | None = None

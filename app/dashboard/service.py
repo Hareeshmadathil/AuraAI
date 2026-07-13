@@ -22,11 +22,11 @@ from app.dashboard.models import (
     RenderArtifactSummary,
     RenderStatusSummary,
     WorkflowStatusSummary,
+    classify_employee_group,
 )
 from core.constants import (
     AgentStatus,
     DecisionOutcome,
-    DepartmentName,
     JobStatus,
     MissionStatus,
 )
@@ -36,6 +36,7 @@ from core.models import AgentIdentity, WorkflowRecord
 from production.models import ProductionPackage
 from production.rendering.models import LocalRenderResult, RenderedArtifact
 from intelligence.models import IntelligencePackage
+from creative_quality.models import CreativeQualityPackage
 
 
 class DashboardService:
@@ -56,6 +57,7 @@ class DashboardService:
         local_render_result: LocalRenderResult | None = None,
         intelligence_package: IntelligencePackage | None = None,
         niche_discovery: dict[str, Any] | None = None,
+        creative_quality_package: CreativeQualityPackage | None = None,
     ) -> None:
         """Store explicit state collections for snapshot generation."""
 
@@ -72,6 +74,7 @@ class DashboardService:
         self._render_artifacts = self._index_render_artifacts(local_render_result)
         self._intelligence_package = intelligence_package
         self._niche_discovery = niche_discovery
+        self._creative_quality_package = creative_quality_package
 
     def build_snapshot(self) -> DashboardSnapshot:
         """Create a validated point-in-time dashboard snapshot."""
@@ -147,6 +150,7 @@ class DashboardService:
             render=self._summarize_render(self._local_render_result),
             intelligence=self._intelligence_package,
             niche_discovery=self._niche_discovery,
+            creative_quality=self._creative_quality_package,
         )
 
     def get_render_artifact(self, artifact_id: UUID) -> RenderedArtifact | None:
@@ -168,7 +172,10 @@ class DashboardService:
     ) -> dict[UUID, RenderedArtifact]:
         if result is None:
             return {}
-        return {artifact.artifact_id: artifact for artifact in result.exported_artifacts}
+        return {
+            artifact.artifact_id: artifact
+            for artifact in result.exported_artifacts
+        }
 
     @staticmethod
     def _summarize_render(
@@ -268,11 +275,7 @@ class DashboardService:
     def _classify_employee(identity: AgentIdentity) -> EmployeeGroup:
         """Classify an employee from existing identity information."""
 
-        if identity.department == DepartmentName.EXECUTIVE:
-            return EmployeeGroup.EXECUTIVE
-        if identity.job_title.endswith("Director"):
-            return EmployeeGroup.DIRECTOR
-        return EmployeeGroup.SPECIALIST
+        return classify_employee_group(identity.department, identity.job_title)
 
     @staticmethod
     def _employees_in_group(

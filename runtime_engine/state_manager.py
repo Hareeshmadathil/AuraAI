@@ -28,6 +28,7 @@ from runtime_engine.models import (
     RuntimeProductionState,
     RuntimeRenderState,
     RuntimeIntelligenceState,
+    RuntimeCreativeQualityState,
     RuntimeSnapshot,
     RuntimeStatistics,
     RuntimeWorkflowState,
@@ -48,6 +49,9 @@ class RuntimeStateManager:
         self._production_packages: dict[UUID, RuntimeProductionState] = {}
         self._render_exports: dict[UUID, RuntimeRenderState] = {}
         self._intelligence_packages: dict[UUID, RuntimeIntelligenceState] = {}
+        self._creative_quality_packages: dict[
+            UUID, RuntimeCreativeQualityState
+        ] = {}
 
     @property
     def mode(self) -> RuntimeMode:
@@ -177,7 +181,11 @@ class RuntimeStateManager:
             name=record.name,
             status=record.status,
             progress_percentage=float(
-                getattr(workflow, "progress_percentage", 100.0 if record.status == JobStatus.COMPLETED else 0.0)
+                getattr(
+                    workflow,
+                    "progress_percentage",
+                    100.0 if record.status == JobStatus.COMPLETED else 0.0,
+                )
             ),
             current_step_id=record.current_task_id,
             started_at=record.started_at,
@@ -329,24 +337,85 @@ class RuntimeStateManager:
 
         return tuple(self._intelligence_packages.values())
 
+    def register_creative_quality_package(
+        self,
+        package: Any,
+        *,
+        replace: bool = False,
+    ) -> RuntimeCreativeQualityState:
+        """Register a quality projection without importing its domain model."""
+
+        if package.package_id in self._creative_quality_packages and not replace:
+            raise StorageError("Creative Quality package is already registered.")
+        state = RuntimeCreativeQualityState(
+            package_id=package.package_id,
+            production_package_id=package.production_package_id,
+            current_stage=package.current_stage.value,
+            overall_score=package.scores.overall,
+            gate_status=package.gate.status.value,
+            blocker_count=len(package.gate.blocking_issues),
+            warning_count=len(package.gate.warnings),
+            revision_count=package.revision_plan.revision_count,
+            started_at=package.created_at,
+            completed_at=package.completed_at,
+            error_message=(
+                package.gate.rationale
+                if package.gate.status.value == "blocked"
+                else None
+            ),
+        )
+        self._creative_quality_packages[package.package_id] = state
+        return state
+
+    def list_creative_quality_states(
+        self,
+    ) -> tuple[RuntimeCreativeQualityState, ...]:
+        """Return registered quality projections."""
+
+        return tuple(self._creative_quality_packages.values())
+
     def build_statistics(self) -> RuntimeStatistics:
         mission_states = tuple(self._missions.values())
         workflow_states = tuple(self._workflows.values())
         employee_states = tuple(self._employees.values())
         return RuntimeStatistics(
             registered_missions=len(mission_states),
-            active_missions=sum(m.status in {MissionStatus.PLANNING, MissionStatus.ACTIVE, MissionStatus.PAUSED} for m in mission_states),
-            completed_missions=sum(m.status == MissionStatus.COMPLETED for m in mission_states),
-            failed_missions=sum(m.status == MissionStatus.FAILED for m in mission_states),
+            active_missions=sum(
+                mission.status
+                in {
+                    MissionStatus.PLANNING,
+                    MissionStatus.ACTIVE,
+                    MissionStatus.PAUSED,
+                }
+                for mission in mission_states
+            ),
+            completed_missions=sum(
+                mission.status == MissionStatus.COMPLETED
+                for mission in mission_states
+            ),
+            failed_missions=sum(
+                mission.status == MissionStatus.FAILED for mission in mission_states
+            ),
             registered_workflows=len(workflow_states),
-            active_workflows=sum(w.status == JobStatus.RUNNING for w in workflow_states),
-            employees_working=sum(e.status == AgentStatus.WORKING for e in employee_states),
-            employees_idle=sum(e.status == AgentStatus.IDLE for e in employee_states),
-            pending_decisions=sum(d.outcome == DecisionOutcome.PENDING for d in self._decisions.values()),
+            active_workflows=sum(
+                workflow.status == JobStatus.RUNNING for workflow in workflow_states
+            ),
+            employees_working=sum(
+                employee.status == AgentStatus.WORKING
+                for employee in employee_states
+            ),
+            employees_idle=sum(
+                employee.status == AgentStatus.IDLE for employee in employee_states
+            ),
+            pending_decisions=sum(
+                decision.outcome == DecisionOutcome.PENDING
+                for decision in self._decisions.values()
+            ),
             total_events=self.event_bus.count(),
             production_packages=len(self._production_packages),
             render_exports=len(self._render_exports),
             intelligence_packages=len(self._intelligence_packages),
+            creative_quality_packages=len(self._creative_quality_packages),
         )
 
     def snapshot(self, recent_event_limit: int = 50) -> RuntimeSnapshot:
@@ -362,6 +431,9 @@ class RuntimeStateManager:
             production_packages=list(self._production_packages.values()),
             render_exports=list(self._render_exports.values()),
             intelligence_packages=list(self._intelligence_packages.values()),
+            creative_quality_packages=list(
+                self._creative_quality_packages.values()
+            ),
         )
 
     @staticmethod

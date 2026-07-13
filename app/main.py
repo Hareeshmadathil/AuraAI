@@ -116,4 +116,24 @@ def create_local_render_demo_app(
     )
 
 
+def create_creative_quality_demo_app() -> FastAPI:
+    """Create the cumulative deterministic Creative Quality demo app."""
+
+    from company_missions import create_creative_quality_demo_dashboard_service
+
+    return create_app(
+        dashboard_service=create_creative_quality_demo_dashboard_service()
+    )
+
+
+def create_quality_render_demo_app() -> FastAPI:
+    """Create a quality-plus-existing-local-render review app."""
+
+    from company_missions import create_quality_render_demo_dashboard_service
+
+    return create_app(
+        dashboard_service=create_quality_render_demo_dashboard_service()
+    )
+
+
 app = create_app()

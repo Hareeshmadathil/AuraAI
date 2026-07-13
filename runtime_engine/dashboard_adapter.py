@@ -9,12 +9,12 @@ from app.dashboard.models import (
     ActivityEventSummary,
     ActivityEventType,
     DashboardMode,
-    EmployeeGroup,
     EmployeeStatusSummary,
     MissionStatusSummary,
     SystemHealthStatus,
     SystemHealthSummary,
     WorkflowStatusSummary,
+    classify_employee_group,
 )
 from app.dashboard.service import DashboardService
 from runtime_engine.models import RuntimeEventSeverity, RuntimeSnapshot
@@ -22,6 +22,7 @@ from production.models import ProductionPackage
 from intelligence.models import IntelligencePackage
 from core.models import AgentIdentity
 from production.rendering.models import LocalRenderResult
+from creative_quality.models import CreativeQualityPackage
 
 
 class EmployeeIdentityProvider(Protocol):
@@ -40,6 +41,7 @@ def create_dashboard_service_from_runtime(
     local_render_result: LocalRenderResult | None = None,
     company_roster: Iterable[AgentIdentity | EmployeeIdentityProvider] = (),
     niche_discovery: dict[str, Any] | None = None,
+    creative_quality_package: CreativeQualityPackage | None = None,
 ) -> DashboardService:
     """Create an injected dashboard service from one runtime snapshot."""
 
@@ -79,6 +81,7 @@ def create_dashboard_service_from_runtime(
         intelligence_package=intelligence_package,
         local_render_result=local_render_result,
         niche_discovery=niche_discovery,
+        creative_quality_package=creative_quality_package,
     )
 
 
@@ -123,8 +126,8 @@ def _merge_employees(
                 department=identity.department,
                 status=runtime.status if runtime else identity.status,
                 enabled=identity.enabled,
-                group=_employee_group(
-                    identity.department.value, identity.job_title
+                group=classify_employee_group(
+                    identity.department, identity.job_title
                 ),
             )
         )
@@ -137,20 +140,14 @@ def _merge_employees(
             department=employee.department,
             status=employee.status,
             enabled=True,
-            group=_employee_group(employee.department.value, employee.job_title),
+            group=classify_employee_group(
+                employee.department, employee.job_title
+            ),
         )
         for employee in snapshot.employees
         if employee.job_title not in seen_titles
     )
     return values
-
-
-def _employee_group(department: str, job_title: str) -> EmployeeGroup:
-    if department == "executive":
-        return EmployeeGroup.EXECUTIVE
-    if job_title.endswith("Director"):
-        return EmployeeGroup.DIRECTOR
-    return EmployeeGroup.SPECIALIST
 
 
 def _activity_type(event_type: str) -> ActivityEventType:

@@ -11,7 +11,7 @@ def test_company_roster_includes_all_implemented_employees() -> None:
 
     roster = create_company_roster()
 
-    assert len(roster.employees) == 24
+    assert len(roster.employees) == 32
     assert {employee.job_title for employee in roster.executives} == {
         "Chief Executive Officer",
         "Chief Operating Officer",
@@ -22,6 +22,7 @@ def test_company_roster_includes_all_implemented_employees() -> None:
         "Marketing Director",
         "SEO Director",
         "Production Director",
+        "Creative Quality Director",
     }
     assert {employee.job_title for employee in roster.specialists} == {
         "Trend Hunter",
@@ -41,6 +42,13 @@ def test_company_roster_includes_all_implemented_employees() -> None:
         "Shorts Editor",
         "Video Editor",
         "Production Quality Controller",
+        "Hook Architect",
+        "Story Director",
+        "Motion Designer",
+        "Subtitle Designer",
+        "Thumbnail Psychologist",
+        "Retention Auditor",
+        "Factuality Reviewer",
     }
 
 
@@ -62,14 +70,14 @@ def test_demo_service_groups_company_and_counts_statuses() -> None:
     snapshot = create_demo_dashboard_service().build_snapshot()
 
     assert len(snapshot.executives) == 2
-    assert len(snapshot.directors) == 5
-    assert len(snapshot.specialists) == 17
+    assert len(snapshot.directors) == 6
+    assert len(snapshot.specialists) == 24
     assert all(
         employee.group == EmployeeGroup.EXECUTIVE
         for employee in snapshot.executives
     )
     assert snapshot.employees_working == 4
-    assert snapshot.employees_idle == 20
+    assert snapshot.employees_idle == 28
     assert snapshot.employee_status_counts[AgentStatus.WORKING] == 4
 
 

@@ -35,6 +35,13 @@ from agents.specialists.intelligence_analysts import (
     ThumbnailAnalyst,
     TrendAnalyst,
 )
+from agents.specialists.factuality_reviewer import FactualityReviewer
+from agents.specialists.hook_architect import HookArchitect
+from agents.specialists.motion_designer import MotionDesigner
+from agents.specialists.retention_auditor import RetentionAuditor
+from agents.specialists.story_director import StoryDirector
+from agents.specialists.subtitle_designer import SubtitleDesigner
+from agents.specialists.thumbnail_psychologist import ThumbnailPsychologist
 
 __all__ = [
     "TrendCandidate",
@@ -62,4 +69,11 @@ __all__ = [
     "RetentionEngineer",
     "ThumbnailAnalyst",
     "TrendAnalyst",
+    "FactualityReviewer",
+    "HookArchitect",
+    "MotionDesigner",
+    "RetentionAuditor",
+    "StoryDirector",
+    "SubtitleDesigner",
+    "ThumbnailPsychologist",
 ]

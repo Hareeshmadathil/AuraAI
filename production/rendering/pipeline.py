@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from core import OperationResult
+from creative_quality.models import CreativeQualityPackage, QualityGateStatus
 from production.models import ProductionPackage, ProductionPipelineResult
 from production.rendering.capabilities import RenderCapabilityDetector
 from production.rendering.export_service import RenderExportService
@@ -64,10 +65,21 @@ class LocalRenderPipeline:
         *,
         founder_render_approved: bool = False,
         allow_silent_fallback: bool = False,
+        creative_quality_package: CreativeQualityPackage | None = None,
+        quality_enforcement_enabled: bool = False,
+        founder_quality_override: bool = False,
     ) -> OperationResult:
         """Execute a bounded local render; never publish its artifacts."""
 
         self._emit(RuntimeEventType.RENDER_REQUESTED, "Local render requested.")
+        quality_failure = self._validate_quality_gate(
+            package,
+            creative_quality_package,
+            enforcement_enabled=quality_enforcement_enabled,
+            founder_quality_override=founder_quality_override,
+        )
+        if quality_failure is not None:
+            return quality_failure
         if not founder_render_approved:
             self._emit(
                 RuntimeEventType.FOUNDER_REVIEW_REQUIRED,
@@ -89,7 +101,10 @@ class LocalRenderPipeline:
         )
         missing = self._missing_required_capabilities(capabilities)
         if missing:
-            message = "Required local render capabilities unavailable: " + ", ".join(missing)
+            message = (
+                "Required local render capabilities unavailable: "
+                + ", ".join(missing)
+            )
             self._emit(
                 RuntimeEventType.RENDER_FAILED,
                 message,
@@ -99,7 +114,9 @@ class LocalRenderPipeline:
                 message,
                 error_code="LOCAL_RENDER_CAPABILITY_UNAVAILABLE",
                 data={
-                    "capabilities": [item.model_dump(mode="json") for item in capabilities]
+                    "capabilities": [
+                        item.model_dump(mode="json") for item in capabilities
+                    ]
                 },
             )
 
@@ -124,7 +141,10 @@ class LocalRenderPipeline:
             result.data["local_render_result"]
         )
         if self.runtime_state is not None:
-            state = self.runtime_state.register_render_result(local_result, replace=True)
+            state = self.runtime_state.register_render_result(
+                local_result,
+                replace=True,
+            )
             local_result.runtime_snapshot = state.model_dump(mode="json")
             result.data["local_render_result"] = local_result.model_dump(mode="json")
         self._emit(RuntimeEventType.RENDER_COMPLETED, "Local render completed.")
@@ -133,6 +153,47 @@ class LocalRenderPipeline:
             "Rendered artifacts require founder review and are not published.",
         )
         return result
+
+    @staticmethod
+    def _validate_quality_gate(
+        package: ProductionPackage,
+        quality: CreativeQualityPackage | None,
+        *,
+        enforcement_enabled: bool,
+        founder_quality_override: bool,
+    ) -> OperationResult | None:
+        """Enforce optional quality approval separately from render approval."""
+
+        if not enforcement_enabled:
+            return None
+        if quality is None:
+            return OperationResult.failure(
+                "Creative Quality review is required before local rendering.",
+                error_code="CREATIVE_QUALITY_REQUIRED",
+            )
+        if quality.production_package_id != package.package_id:
+            return OperationResult.failure(
+                "Creative Quality package does not match the production package.",
+                error_code="CREATIVE_QUALITY_PACKAGE_MISMATCH",
+            )
+        gate = quality.gate
+        if gate.status == QualityGateStatus.BLOCKED:
+            return OperationResult.failure(
+                "Creative Quality blockers must be resolved before rendering.",
+                error_code="CREATIVE_QUALITY_BLOCKED",
+            )
+        if gate.status == QualityGateStatus.REVISION_REQUIRED:
+            return OperationResult.failure(
+                "Creative Quality revisions require review before rendering.",
+                error_code="CREATIVE_QUALITY_REVISION_REQUIRED",
+            )
+        if gate.status == QualityGateStatus.FOUNDER_OVERRIDE_REQUIRED:
+            if not founder_quality_override or not gate.founder_override_allowed:
+                return OperationResult.failure(
+                    "Explicit founder quality override is required.",
+                    error_code="FOUNDER_QUALITY_OVERRIDE_REQUIRED",
+                )
+        return None
 
     def _record_stage(self, stage: RenderStageResult) -> None:
         event_type = self._STAGE_EVENTS.get(stage.stage_name)

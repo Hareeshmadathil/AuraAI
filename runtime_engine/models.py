@@ -65,6 +65,23 @@ class RuntimeEventType(StrEnum):
     INTELLIGENCE_STAGE_COMPLETED = "intelligence_stage_completed"
     INTELLIGENCE_STAGE_FAILED = "intelligence_stage_failed"
     INTELLIGENCE_COMPLETED = "intelligence_completed"
+    CREATIVE_QUALITY_STARTED = "creative_quality_started"
+    HOOK_REVIEW_STARTED = "hook_review_started"
+    HOOK_REVIEW_COMPLETED = "hook_review_completed"
+    STORY_REVIEW_COMPLETED = "story_review_completed"
+    RETENTION_REVIEW_COMPLETED = "retention_review_completed"
+    MOTION_REVIEW_COMPLETED = "motion_review_completed"
+    SUBTITLE_REVIEW_COMPLETED = "subtitle_review_completed"
+    THUMBNAIL_REVIEW_COMPLETED = "thumbnail_review_completed"
+    FACTUALITY_REVIEW_COMPLETED = "factuality_review_completed"
+    CREATIVE_QUALITY_SCORED = "creative_quality_scored"
+    REVISION_PLAN_CREATED = "revision_plan_created"
+    REVISION_APPLIED = "revision_applied"
+    CREATIVE_QUALITY_PASSED = "creative_quality_passed"
+    CREATIVE_QUALITY_REVISION_REQUIRED = "creative_quality_revision_required"
+    CREATIVE_QUALITY_BLOCKED = "creative_quality_blocked"
+    FOUNDER_QUALITY_REVIEW_REQUIRED = "founder_quality_review_required"
+    CREATIVE_QUALITY_COMPLETED = "creative_quality_completed"
 
 
 class RuntimeEventSeverity(StrEnum):
@@ -167,6 +184,7 @@ class RuntimeStatistics(AuraBaseModel):
     production_packages: int = Field(default=0, ge=0)
     render_exports: int = Field(default=0, ge=0)
     intelligence_packages: int = Field(default=0, ge=0)
+    creative_quality_packages: int = Field(default=0, ge=0)
 
 
 class RuntimeProductionState(AuraBaseModel):
@@ -205,7 +223,9 @@ class RuntimeRenderState(AuraBaseModel):
     @model_validator(mode="after")
     def preserve_local_review_safety(self) -> "RuntimeRenderState":
         if self.published or not self.review_required:
-            raise ValueError("Runtime renders must remain unpublished and review-required.")
+            raise ValueError(
+                "Runtime renders must remain unpublished and review-required."
+            )
         return self
 
     @field_validator("updated_at")
@@ -239,6 +259,27 @@ class RuntimeIntelligenceState(AuraBaseModel):
         return validated
 
 
+class RuntimeCreativeQualityState(AuraBaseModel):
+    """Minimal runtime projection for one creative-quality package."""
+
+    package_id: UUID
+    production_package_id: UUID
+    current_stage: str = Field(min_length=1, max_length=100)
+    overall_score: float = Field(ge=0, le=100)
+    gate_status: str = Field(min_length=1, max_length=100)
+    blocker_count: int = Field(ge=0)
+    warning_count: int = Field(ge=0)
+    revision_count: int = Field(ge=0)
+    started_at: datetime
+    completed_at: datetime | None = None
+    error_message: str | None = Field(default=None, max_length=5000)
+
+    @field_validator("started_at", "completed_at")
+    @classmethod
+    def validate_quality_times(cls, value: datetime | None) -> datetime | None:
+        return _validate_aware(value)
+
+
 class RuntimeSnapshot(AuraBaseModel):
     mode: RuntimeMode
     generated_at: datetime = Field(default_factory=utc_now)
@@ -252,6 +293,9 @@ class RuntimeSnapshot(AuraBaseModel):
     production_packages: list[RuntimeProductionState] = Field(default_factory=list)
     render_exports: list[RuntimeRenderState] = Field(default_factory=list)
     intelligence_packages: list[RuntimeIntelligenceState] = Field(
+        default_factory=list
+    )
+    creative_quality_packages: list[RuntimeCreativeQualityState] = Field(
         default_factory=list
     )
 

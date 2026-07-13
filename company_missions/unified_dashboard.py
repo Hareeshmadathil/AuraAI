@@ -24,6 +24,11 @@ from company_missions.models import NicheDiscoveryResult
 from company_missions.niche_discovery import create_niche_discovery_pipeline
 from intelligence.models import IntelligencePackage
 from intelligence.pipeline import create_intelligence_pipeline
+from creative_quality.models import (
+    CreativeQualityPackage,
+    CreativeQualityPipelineResult,
+)
+from creative_quality.pipeline import create_creative_quality_pipeline
 from production.models import ProductionPackage, ProductionPipelineResult
 from production.rendering.models import LocalRenderResult
 from runtime_engine.dashboard_adapter import (
@@ -38,6 +43,7 @@ def build_unified_dashboard_context(
     render_result: LocalRenderResult | None = None,
     production_package: ProductionPackage | None = None,
     output_root: Path | None = None,
+    creative_quality_package: CreativeQualityPackage | None = None,
 ) -> UnifiedDashboardContext:
     """Run cumulative in-memory stages and reuse existing render artifacts."""
 
@@ -76,6 +82,8 @@ def build_unified_dashboard_context(
     if stage in {
         DashboardContextStage.PRODUCTION,
         DashboardContextStage.RENDER,
+        DashboardContextStage.CREATIVE_QUALITY,
+        DashboardContextStage.QUALITY_RENDER,
     }:
         production_pipeline, _ = create_content_production_pipeline(
             state_manager=state,
@@ -93,7 +101,10 @@ def build_unified_dashboard_context(
             production_operation.data["production_pipeline_result"]
         ).package
 
-    if stage == DashboardContextStage.RENDER and render_result is None:
+    if stage in {
+        DashboardContextStage.RENDER,
+        DashboardContextStage.QUALITY_RENDER,
+    } and render_result is None:
         root = (output_root or _default_render_output_root()).resolve()
         loaded = load_latest_local_render_demo(root)
         if loaded is None:
@@ -102,6 +113,41 @@ def build_unified_dashboard_context(
             )
         render_result, production_package = loaded
     selected_production = production_package or generated_production
+    if selected_production is None and stage in {
+        DashboardContextStage.CREATIVE_QUALITY,
+        DashboardContextStage.QUALITY_RENDER,
+    }:
+        raise RuntimeError("Creative Quality requires a production package.")
+    if stage in {
+        DashboardContextStage.CREATIVE_QUALITY,
+        DashboardContextStage.QUALITY_RENDER,
+    } and creative_quality_package is None:
+        quality_pipeline = create_creative_quality_pipeline(
+            state_manager=state,
+            event_bus=bus,
+        )
+        quality_operation = quality_pipeline.run(selected_production)
+        result_data = quality_operation.data.get(
+            "creative_quality_pipeline_result"
+        )
+        if result_data is None:
+            raise RuntimeError(quality_operation.message)
+        creative_quality_package = CreativeQualityPipelineResult.model_validate(
+            result_data
+        ).quality_package
+    elif creative_quality_package is not None:
+        if (
+            selected_production is None
+            or creative_quality_package.production_package_id
+            != selected_production.package_id
+        ):
+            raise ValueError(
+                "Creative Quality package must match the selected production package."
+            )
+        state.register_creative_quality_package(
+            creative_quality_package,
+            replace=True,
+        )
     snapshot = state.snapshot()
     return UnifiedDashboardContext(
         stage=stage,
@@ -115,6 +161,21 @@ def build_unified_dashboard_context(
         intelligence_package=intelligence_package,
         production_package=selected_production,
         render_result=render_result,
+        creative_quality_package=creative_quality_package,
+        quality_runtime_state=(
+            snapshot.creative_quality_packages[-1]
+            if snapshot.creative_quality_packages
+            else None
+        ),
+        quality_labels=(
+            [
+                "DETERMINISTIC HEURISTIC",
+                "FOUNDER REVIEW SEPARATE",
+                "NOT PUBLISHING APPROVAL",
+            ]
+            if creative_quality_package is not None
+            else []
+        ),
         system_health=build_system_health_summary(snapshot),
         activity_events=build_activity_summaries(snapshot),
         niche_discovery=niche_result.model_dump(mode="json"),
@@ -122,6 +183,7 @@ def build_unified_dashboard_context(
             intelligence_package=intelligence_package,
             production_package=selected_production,
             render_result=render_result,
+            creative_quality_package=creative_quality_package,
         ),
     )
 
@@ -132,6 +194,7 @@ def create_unified_dashboard_service(
     render_result: LocalRenderResult | None = None,
     production_package: ProductionPackage | None = None,
     output_root: Path | None = None,
+    creative_quality_package: CreativeQualityPackage | None = None,
 ) -> DashboardService:
     """Create the injected service consumed by a specialized app factory."""
 
@@ -140,6 +203,7 @@ def create_unified_dashboard_service(
         render_result=render_result,
         production_package=production_package,
         output_root=output_root,
+        creative_quality_package=creative_quality_package,
     ).create_dashboard_service()
 
 
@@ -148,6 +212,7 @@ def _data_sources(
     intelligence_package: IntelligencePackage | None,
     production_package: ProductionPackage | None,
     render_result: LocalRenderResult | None,
+    creative_quality_package: CreativeQualityPackage | None,
 ) -> list[str]:
     values = ["deterministic_niche_discovery"]
     if intelligence_package is not None:
@@ -156,6 +221,8 @@ def _data_sources(
         values.append("deterministic_production")
     if render_result is not None:
         values.append("validated_local_render_manifest")
+    if creative_quality_package is not None:
+        values.append("deterministic_creative_quality_heuristics")
     return values
 
 
@@ -173,5 +240,12 @@ def _data_label(stage: DashboardContextStage) -> str:
         ),
         DashboardContextStage.RENDER: (
             "FULL LOCAL REVIEW CONTEXT / NOT PUBLISHED"
+        ),
+        DashboardContextStage.CREATIVE_QUALITY: (
+            "CREATIVE QUALITY DEMO / DETERMINISTIC HEURISTICS / "
+            "FOUNDER REVIEW SEPARATE"
+        ),
+        DashboardContextStage.QUALITY_RENDER: (
+            "QUALITY + LOCAL RENDER REVIEW / NOT PUBLISHED"
         ),
     }[stage]

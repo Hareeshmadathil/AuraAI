@@ -115,6 +115,7 @@ class DepartmentName(StrEnum):
     MARKETING = "marketing"
     EDITORIAL = "editorial"
     PRODUCTION = "production"
+    CREATIVE_QUALITY = "creative_quality"
     DISTRIBUTION = "distribution"
     ANALYTICS = "analytics"
     REVENUE = "revenue"

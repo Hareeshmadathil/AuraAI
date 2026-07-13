@@ -7,6 +7,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from agents.base_employee import BaseEmployee
 from agents.directors import (
+    CreativeDirector,
     ProductionDirector,
     ResearchDirector,
     SEODirector,
@@ -31,6 +32,13 @@ from agents.specialists import (
     VideoEditor,
     VoiceArtist,
     YouTubeManager,
+    FactualityReviewer,
+    HookArchitect,
+    MotionDesigner,
+    RetentionAuditor,
+    StoryDirector,
+    SubtitleDesigner,
+    ThumbnailPsychologist,
 )
 from intelligence.providers import DeterministicIntelligenceProvider
 from marketing import MarketingDirector
@@ -70,6 +78,7 @@ def create_company_roster() -> CompanyRoster:
             MarketingDirector(),
             SEODirector(intelligence_provider),
             ProductionDirector(),
+            CreativeDirector(),
         ),
         specialists=(
             TrendHunter(),
@@ -89,6 +98,13 @@ def create_company_roster() -> CompanyRoster:
             ShortsEditor(),
             VideoEditor(),
             QualityController(),
+            HookArchitect(),
+            StoryDirector(),
+            MotionDesigner(),
+            SubtitleDesigner(),
+            ThumbnailPsychologist(),
+            RetentionAuditor(),
+            FactualityReviewer(),
         ),
     )
 

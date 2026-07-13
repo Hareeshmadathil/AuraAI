@@ -193,6 +193,21 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             active_path="/renders",
         )
 
+    @router.get("/creative-quality", response_class=HTMLResponse)
+    def creative_quality_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render deterministic quality scores, gate, and revisions."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="creative_quality.html",
+            page_title="Creative Quality",
+            active_path="/creative-quality",
+        )
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,

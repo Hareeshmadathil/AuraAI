@@ -15,7 +15,7 @@ def test_unified_context_preserves_typed_cumulative_collections() -> None:
         DashboardContextStage.PRODUCTION
     )
 
-    assert len(context.company_roster) == 24
+    assert len(context.company_roster) == 32
     assert context.runtime_snapshot
     assert context.missions
     assert context.workflows

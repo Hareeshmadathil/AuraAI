@@ -18,6 +18,11 @@ from agents.directors.production_director import (
     ProductionPlan,
 )
 from agents.directors.seo_director import SEODirector
+from agents.directors.creative_director import (
+    CreativeDirector,
+    CreativeQualityReviewAssignment,
+    CreativeQualityReviewPlan,
+)
 
 __all__ = [
     "ResearchAssignment",
@@ -30,4 +35,7 @@ __all__ = [
     "StrategyPlan",
     "StrategyWorkItem",
     "SEODirector",
+    "CreativeDirector",
+    "CreativeQualityReviewAssignment",
+    "CreativeQualityReviewPlan",
 ]

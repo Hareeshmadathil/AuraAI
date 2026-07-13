@@ -15,6 +15,7 @@ from app.dashboard.models import (
 from app.dashboard.service import DashboardService
 from core import AgentIdentity, AuraBaseModel, DecisionRecord
 from intelligence.models import IntelligencePackage
+from creative_quality.models import CreativeQualityPackage
 from production.models import ProductionPackage
 from production.rendering.models import LocalRenderResult
 from runtime_engine.dashboard_adapter import create_dashboard_service_from_runtime
@@ -22,6 +23,7 @@ from runtime_engine.models import (
     RuntimeMissionState,
     RuntimeSnapshot,
     RuntimeWorkflowState,
+    RuntimeCreativeQualityState,
 )
 
 
@@ -32,6 +34,8 @@ class DashboardContextStage(StrEnum):
     INTELLIGENCE = "intelligence"
     PRODUCTION = "production"
     RENDER = "render"
+    CREATIVE_QUALITY = "creative_quality"
+    QUALITY_RENDER = "quality_render"
 
 
 class UnifiedDashboardContext(AuraBaseModel):
@@ -48,6 +52,9 @@ class UnifiedDashboardContext(AuraBaseModel):
     intelligence_package: IntelligencePackage | None = None
     production_package: ProductionPackage | None = None
     render_result: LocalRenderResult | None = None
+    creative_quality_package: CreativeQualityPackage | None = None
+    quality_runtime_state: RuntimeCreativeQualityState | None = None
+    quality_labels: list[str] = Field(default_factory=list)
     system_health: SystemHealthSummary
     activity_events: list[ActivityEventSummary] = Field(default_factory=list)
     niche_discovery: dict[str, Any] | None = None
@@ -61,15 +68,29 @@ class UnifiedDashboardContext(AuraBaseModel):
             DashboardContextStage.INTELLIGENCE,
             DashboardContextStage.PRODUCTION,
             DashboardContextStage.RENDER,
+            DashboardContextStage.CREATIVE_QUALITY,
+            DashboardContextStage.QUALITY_RENDER,
         } and self.intelligence_package is None:
             raise ValueError("Intelligence payload is required for this stage.")
         if self.stage in {
             DashboardContextStage.PRODUCTION,
             DashboardContextStage.RENDER,
+            DashboardContextStage.CREATIVE_QUALITY,
+            DashboardContextStage.QUALITY_RENDER,
         } and self.production_package is None:
             raise ValueError("Production payload is required for this stage.")
         if self.stage == DashboardContextStage.RENDER and self.render_result is None:
             raise ValueError("Render payload is required for the render stage.")
+        if self.stage in {
+            DashboardContextStage.CREATIVE_QUALITY,
+            DashboardContextStage.QUALITY_RENDER,
+        } and self.creative_quality_package is None:
+            raise ValueError("Creative Quality payload is required for this stage.")
+        if (
+            self.stage == DashboardContextStage.QUALITY_RENDER
+            and self.render_result is None
+        ):
+            raise ValueError("Render payload is required for quality-render stage.")
         return self
 
     def create_dashboard_service(self) -> DashboardService:
@@ -84,4 +105,5 @@ class UnifiedDashboardContext(AuraBaseModel):
             local_render_result=self.render_result,
             company_roster=self.company_roster,
             niche_discovery=self.niche_discovery,
+            creative_quality_package=self.creative_quality_package,
         )

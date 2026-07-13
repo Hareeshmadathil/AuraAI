@@ -141,3 +141,35 @@ When the standard content-production mission receives a niche-discovery
 result, the factory-backed flow is now Research → Intelligence → Production.
 Direct `ProductionInput` and prebuilt `IntelligencePackage` inputs remain
 supported. Rendering remains an explicit, separately approved local step.
+
+## Content Quality Engine v1
+
+AuraAI now includes an offline Creative Quality stage between Production and
+founder-approved local rendering. Muse, the Creative Quality Director,
+coordinates Hook Architect, Story Director, Retention Auditor, Motion
+Designer, Subtitle Designer, Thumbnail Psychologist, and Factuality Reviewer
+employees through the standard `BaseEmployee` lifecycle.
+
+The engine scores hook, story, pacing, retention, clarity, motion, subtitles,
+thumbnail, factuality, trust, call to action, and production completeness with
+documented weights. These values are internal deterministic heuristics. They
+do not predict real views, retention, click-through rate, subscribers, or
+revenue.
+
+The quality gate passes only when its configurable threshold is met and no
+blockers exist. Low-risk subjective variance may require an explicit founder
+override; factuality, trust, safety, copyright, and security blockers cannot
+be overridden. A bounded revision engine updates a copied package without
+fabricating facts, removing evidence warnings, or mutating the original.
+Quality approval never grants render or publishing approval.
+
+Run the cumulative local dashboard with:
+
+```powershell
+python -m uvicorn app.main:create_creative_quality_demo_app --factory --reload
+```
+
+Open `http://127.0.0.1:8000/creative-quality`. The standard sequence is
+Research -> Intelligence -> Production -> Creative Quality -> explicit
+founder render approval -> Local Render -> Founder Review. No live provider,
+external API, audience prediction, or publishing integration is included.
