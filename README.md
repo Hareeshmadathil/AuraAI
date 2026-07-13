@@ -173,3 +173,19 @@ Open `http://127.0.0.1:8000/creative-quality`. The standard sequence is
 Research -> Intelligence -> Production -> Creative Quality -> explicit
 founder render approval -> Local Render -> Founder Review. No live provider,
 external API, audience prediction, or publishing integration is included.
+
+## Distribution & Analytics Department v1
+
+AuraAI can now prepare local platform metadata and manual upload checklists,
+then analyze founder-supplied performance metrics and produce deterministic
+learning recommendations. Publishing, authentication, uploads, API access,
+ML training, and online learning remain disabled; every state transition
+requires explicit founder action.
+
+Run the cumulative local demo with:
+
+```powershell
+python -m uvicorn app.main:create_distribution_demo_app --factory --reload
+```
+
+Open `http://127.0.0.1:8000/distribution`, `/analytics`, or `/learning`.

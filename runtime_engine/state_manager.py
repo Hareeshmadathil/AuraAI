@@ -29,6 +29,9 @@ from runtime_engine.models import (
     RuntimeRenderState,
     RuntimeIntelligenceState,
     RuntimeCreativeQualityState,
+    RuntimeDistributionState,
+    RuntimeAnalyticsState,
+    RuntimeLearningState,
     RuntimeSnapshot,
     RuntimeStatistics,
     RuntimeWorkflowState,
@@ -52,6 +55,9 @@ class RuntimeStateManager:
         self._creative_quality_packages: dict[
             UUID, RuntimeCreativeQualityState
         ] = {}
+        self._distribution_packages: dict[UUID, RuntimeDistributionState] = {}
+        self._analytics_reports: dict[UUID, RuntimeAnalyticsState] = {}
+        self._learning_reports: dict[UUID, RuntimeLearningState] = {}
 
     @property
     def mode(self) -> RuntimeMode:
@@ -374,6 +380,79 @@ class RuntimeStateManager:
 
         return tuple(self._creative_quality_packages.values())
 
+    def register_distribution_package(
+        self,
+        package: Any,
+        *,
+        replace: bool = False,
+    ) -> RuntimeDistributionState:
+        """Register a safe projection without importing Distribution models."""
+
+        if package.package_id in self._distribution_packages and not replace:
+            raise StorageError("Distribution package is already registered.")
+        state = RuntimeDistributionState(
+            package_id=package.package_id,
+            source_package_id=package.source_package_id,
+            publication_status=package.publication_status.value,
+            channel_count=7,
+            checklist_complete=package.manual_approval_checklist.complete,
+            automatic_publishing=package.automatic_publishing,
+        )
+        self._distribution_packages[package.package_id] = state
+        return state
+
+    def list_distribution_states(self) -> tuple[RuntimeDistributionState, ...]:
+        return tuple(self._distribution_packages.values())
+
+    def register_analytics_report(
+        self,
+        report: Any,
+        *,
+        replace: bool = False,
+    ) -> RuntimeAnalyticsState:
+        """Register manually supplied analytics without domain coupling."""
+
+        if report.report_id in self._analytics_reports and not replace:
+            raise StorageError("Analytics report is already registered.")
+        metrics = report.metrics
+        state = RuntimeAnalyticsState(
+            report_id=report.report_id,
+            distribution_package_id=metrics.distribution_package_id,
+            views=metrics.views,
+            click_through_rate=metrics.click_through_rate,
+            retention_percentage=metrics.retention_percentage,
+            manually_supplied=metrics.manually_supplied,
+        )
+        self._analytics_reports[report.report_id] = state
+        return state
+
+    def list_analytics_states(self) -> tuple[RuntimeAnalyticsState, ...]:
+        return tuple(self._analytics_reports.values())
+
+    def register_learning_report(
+        self,
+        report: Any,
+        *,
+        replace: bool = False,
+    ) -> RuntimeLearningState:
+        """Register deterministic learning without training state."""
+
+        if report.report_id in self._learning_reports and not replace:
+            raise StorageError("Learning report is already registered.")
+        state = RuntimeLearningState(
+            report_id=report.report_id,
+            distribution_package_id=report.distribution_package_id,
+            analytics_report_id=report.analytics_report_id,
+            recommendation_count=len(report.improvement_recommendations),
+            ml_training_performed=report.ml_training_performed,
+            online_learning_performed=report.online_learning_performed,
+        )
+        self._learning_reports[report.report_id] = state
+        return state
+
+    def list_learning_states(self) -> tuple[RuntimeLearningState, ...]:
+        return tuple(self._learning_reports.values())
+
     def build_statistics(self) -> RuntimeStatistics:
         mission_states = tuple(self._missions.values())
         workflow_states = tuple(self._workflows.values())
@@ -416,6 +495,9 @@ class RuntimeStateManager:
             render_exports=len(self._render_exports),
             intelligence_packages=len(self._intelligence_packages),
             creative_quality_packages=len(self._creative_quality_packages),
+            distribution_packages=len(self._distribution_packages),
+            analytics_reports=len(self._analytics_reports),
+            learning_reports=len(self._learning_reports),
         )
 
     def snapshot(self, recent_event_limit: int = 50) -> RuntimeSnapshot:
@@ -434,6 +516,9 @@ class RuntimeStateManager:
             creative_quality_packages=list(
                 self._creative_quality_packages.values()
             ),
+            distribution_packages=list(self._distribution_packages.values()),
+            analytics_reports=list(self._analytics_reports.values()),
+            learning_reports=list(self._learning_reports.values()),
         )
 
     @staticmethod

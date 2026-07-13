@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block heading %}Deterministic Learning Center{% endblock %}
+{% block content %}
+{% set report = snapshot.learning %}
+{% if report %}
+<section class="panel page-panel"><p class="eyebrow">No ML training or online learning</p><h2>Performance feedback</h2><p>Recommendations compare internal heuristics with manually supplied outcomes. They are directional, not causal.</p></section>
+<section class="dashboard-grid">
+    <article class="panel"><p class="eyebrow">Comparison</p><h2>Predicted vs observed</h2><ul>{% for item in report.comparisons %}<li>{{ item.dimension | replace('_', ' ') | title }}: {{ item.predicted_score }} predicted / {{ item.observed_score }} observed &mdash; {{ item.interpretation }}</li>{% endfor %}</ul></article>
+    <article class="panel"><p class="eyebrow">Next iteration</p><h2>Recommendations</h2><ul>{% for item in report.improvement_recommendations %}<li>{{ item }}</li>{% endfor %}</ul><h3>Future hooks</h3><ul>{% for item in report.future_hook_suggestions %}<li>{{ item }}</li>{% endfor %}</ul></article>
+    <article class="panel"><p class="eyebrow">Creative</p><h2>Thumbnail and retention</h2><ul>{% for item in report.thumbnail_observations %}<li>{{ item }}</li>{% endfor %}{% for item in report.retention_observations %}<li>{{ item }}</li>{% endfor %}</ul></article>
+    <article class="panel"><p class="eyebrow">Discovery</p><h2>SEO and timing</h2><ul>{% for item in report.seo_observations %}<li>{{ item }}</li>{% endfor %}{% for item in report.upload_timing_observations %}<li>{{ item }}</li>{% endfor %}</ul></article>
+</section>
+{% else %}
+<section class="panel page-panel"><p class="empty-state">No deterministic learning report is available.</p></section>
+{% endif %}
+{% endblock %}

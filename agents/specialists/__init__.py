@@ -42,6 +42,17 @@ from agents.specialists.retention_auditor import RetentionAuditor
 from agents.specialists.story_director import StoryDirector
 from agents.specialists.subtitle_designer import SubtitleDesigner
 from agents.specialists.thumbnail_psychologist import ThumbnailPsychologist
+from agents.specialists.distribution_specialists import (
+    MetadataSpecialist,
+    SEOPublisher,
+    ShortFormDistributionSpecialist,
+    YouTubeDistributionSpecialist,
+)
+from agents.specialists.analytics_specialists import (
+    AnalyticsEngineer,
+    LearningEngineer,
+    PerformanceAnalyst,
+)
 
 __all__ = [
     "TrendCandidate",
@@ -76,4 +87,11 @@ __all__ = [
     "StoryDirector",
     "SubtitleDesigner",
     "ThumbnailPsychologist",
+    "MetadataSpecialist",
+    "SEOPublisher",
+    "ShortFormDistributionSpecialist",
+    "YouTubeDistributionSpecialist",
+    "AnalyticsEngineer",
+    "LearningEngineer",
+    "PerformanceAnalyst",
 ]

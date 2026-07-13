@@ -82,6 +82,11 @@ class RuntimeEventType(StrEnum):
     CREATIVE_QUALITY_BLOCKED = "creative_quality_blocked"
     FOUNDER_QUALITY_REVIEW_REQUIRED = "founder_quality_review_required"
     CREATIVE_QUALITY_COMPLETED = "creative_quality_completed"
+    DISTRIBUTION_STARTED = "distribution_started"
+    DISTRIBUTION_COMPLETED = "distribution_completed"
+    METRICS_IMPORTED = "metrics_imported"
+    LEARNING_COMPLETED = "learning_completed"
+    APPROVAL_CHANGED = "approval_changed"
 
 
 class RuntimeEventSeverity(StrEnum):
@@ -185,6 +190,9 @@ class RuntimeStatistics(AuraBaseModel):
     render_exports: int = Field(default=0, ge=0)
     intelligence_packages: int = Field(default=0, ge=0)
     creative_quality_packages: int = Field(default=0, ge=0)
+    distribution_packages: int = Field(default=0, ge=0)
+    analytics_reports: int = Field(default=0, ge=0)
+    learning_reports: int = Field(default=0, ge=0)
 
 
 class RuntimeProductionState(AuraBaseModel):
@@ -280,6 +288,48 @@ class RuntimeCreativeQualityState(AuraBaseModel):
         return _validate_aware(value)
 
 
+class RuntimeDistributionState(AuraBaseModel):
+    """Local publishing-preparation projection with no upload capability."""
+
+    package_id: UUID
+    source_package_id: UUID
+    publication_status: str = Field(min_length=1, max_length=100)
+    channel_count: int = Field(ge=0)
+    checklist_complete: bool
+    automatic_publishing: bool = False
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def preserve_manual_distribution(self) -> "RuntimeDistributionState":
+        if self.automatic_publishing:
+            raise ValueError("Runtime Distribution can never publish automatically.")
+        return self
+
+
+class RuntimeAnalyticsState(AuraBaseModel):
+    """Projection of one founder-supplied metrics report."""
+
+    report_id: UUID
+    distribution_package_id: UUID
+    views: int = Field(ge=0)
+    click_through_rate: float = Field(ge=0, le=100)
+    retention_percentage: float = Field(ge=0, le=100)
+    manually_supplied: bool = True
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class RuntimeLearningState(AuraBaseModel):
+    """Projection of deterministic recommendations without training."""
+
+    report_id: UUID
+    distribution_package_id: UUID
+    analytics_report_id: UUID
+    recommendation_count: int = Field(ge=0)
+    ml_training_performed: bool = False
+    online_learning_performed: bool = False
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class RuntimeSnapshot(AuraBaseModel):
     mode: RuntimeMode
     generated_at: datetime = Field(default_factory=utc_now)
@@ -298,6 +348,11 @@ class RuntimeSnapshot(AuraBaseModel):
     creative_quality_packages: list[RuntimeCreativeQualityState] = Field(
         default_factory=list
     )
+    distribution_packages: list[RuntimeDistributionState] = Field(
+        default_factory=list
+    )
+    analytics_reports: list[RuntimeAnalyticsState] = Field(default_factory=list)
+    learning_reports: list[RuntimeLearningState] = Field(default_factory=list)
 
     @field_validator("generated_at")
     @classmethod

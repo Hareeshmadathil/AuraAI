@@ -85,7 +85,7 @@ def test_demo_dashboard_is_visibly_sample_data() -> None:
     assert "DEMO DATA" in page.text
     assert data["mode"] == "demo"
     assert data["data_label"] == "DEMO / LOCAL SAMPLE DATA"
-    assert len(data["employees"]) == 32
+    assert len(data["employees"]) == 40
     assert data["executives"]
     assert data["directors"]
     assert data["specialists"]

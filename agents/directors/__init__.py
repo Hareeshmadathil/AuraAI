@@ -23,6 +23,7 @@ from agents.directors.creative_director import (
     CreativeQualityReviewAssignment,
     CreativeQualityReviewPlan,
 )
+from agents.directors.distribution_director import DistributionDirector
 
 __all__ = [
     "ResearchAssignment",
@@ -38,4 +39,5 @@ __all__ = [
     "CreativeDirector",
     "CreativeQualityReviewAssignment",
     "CreativeQualityReviewPlan",
+    "DistributionDirector",
 ]

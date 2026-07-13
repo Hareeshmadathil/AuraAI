@@ -37,6 +37,8 @@ from production.models import ProductionPackage
 from production.rendering.models import LocalRenderResult, RenderedArtifact
 from intelligence.models import IntelligencePackage
 from creative_quality.models import CreativeQualityPackage
+from analytics.models import AnalyticsReport, LearningReport
+from distribution.models import DistributionPackage
 
 
 class DashboardService:
@@ -58,6 +60,9 @@ class DashboardService:
         intelligence_package: IntelligencePackage | None = None,
         niche_discovery: dict[str, Any] | None = None,
         creative_quality_package: CreativeQualityPackage | None = None,
+        distribution_package: DistributionPackage | None = None,
+        analytics_report: AnalyticsReport | None = None,
+        learning_report: LearningReport | None = None,
     ) -> None:
         """Store explicit state collections for snapshot generation."""
 
@@ -75,6 +80,9 @@ class DashboardService:
         self._intelligence_package = intelligence_package
         self._niche_discovery = niche_discovery
         self._creative_quality_package = creative_quality_package
+        self._distribution_package = distribution_package
+        self._analytics_report = analytics_report
+        self._learning_report = learning_report
 
     def build_snapshot(self) -> DashboardSnapshot:
         """Create a validated point-in-time dashboard snapshot."""
@@ -151,6 +159,9 @@ class DashboardService:
             intelligence=self._intelligence_package,
             niche_discovery=self._niche_discovery,
             creative_quality=self._creative_quality_package,
+            distribution=self._distribution_package,
+            analytics=self._analytics_report,
+            learning=self._learning_report,
         )
 
     def get_render_artifact(self, artifact_id: UUID) -> RenderedArtifact | None:

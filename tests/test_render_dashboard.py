@@ -80,8 +80,8 @@ def test_render_demo_preserves_full_company_and_prior_state(tmp_path: Path) -> N
     assert "SEO Director" in employees_page
     assert "Script Writer" in employees_page
     assert len(data["executives"]) == 2
-    assert len(data["directors"]) == 6
-    assert len(data["specialists"]) == 24
+    assert len(data["directors"]) == 7
+    assert len(data["specialists"]) == 31
     assert data["missions"]
     assert data["workflows"]
     assert data["recent_decisions"]

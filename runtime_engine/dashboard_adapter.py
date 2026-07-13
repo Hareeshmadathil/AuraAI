@@ -23,6 +23,8 @@ from intelligence.models import IntelligencePackage
 from core.models import AgentIdentity
 from production.rendering.models import LocalRenderResult
 from creative_quality.models import CreativeQualityPackage
+from analytics.models import AnalyticsReport, LearningReport
+from distribution.models import DistributionPackage
 
 
 class EmployeeIdentityProvider(Protocol):
@@ -42,6 +44,9 @@ def create_dashboard_service_from_runtime(
     company_roster: Iterable[AgentIdentity | EmployeeIdentityProvider] = (),
     niche_discovery: dict[str, Any] | None = None,
     creative_quality_package: CreativeQualityPackage | None = None,
+    distribution_package: DistributionPackage | None = None,
+    analytics_report: AnalyticsReport | None = None,
+    learning_report: LearningReport | None = None,
 ) -> DashboardService:
     """Create an injected dashboard service from one runtime snapshot."""
 
@@ -82,6 +87,9 @@ def create_dashboard_service_from_runtime(
         local_render_result=local_render_result,
         niche_discovery=niche_discovery,
         creative_quality_package=creative_quality_package,
+        distribution_package=distribution_package,
+        analytics_report=analytics_report,
+        learning_report=learning_report,
     )
 
 

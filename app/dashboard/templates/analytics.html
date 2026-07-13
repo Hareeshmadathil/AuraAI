@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block heading %}Manual Analytics Center{% endblock %}
+{% block content %}
+{% set report = snapshot.analytics %}
+{% if report %}
+<section class="panel page-panel"><p class="eyebrow">Founder-supplied demo metrics</p><h2>{{ report.metrics.platform.value | replace('_', ' ') | title }}</h2><p>No platform account, API, or external analytics service is connected.</p></section>
+<section class="quality-score-grid">
+{% for label, value in [('Views', report.metrics.views), ('CTR %', report.metrics.click_through_rate), ('Retention %', report.metrics.retention_percentage), ('Watch hours', report.metrics.watch_time_hours), ('Engagement %', report.engagement_rate), ('Subscribers', report.metrics.subscribers_gained)] %}<article class="metric-card"><p>{{ label }}</p><strong>{{ value }}</strong></article>{% endfor %}
+</section>
+<section class="dashboard-grid">
+    <article class="panel"><p class="eyebrow">Audience</p><h2>Viewer mix</h2><p>New: {{ report.metrics.new_viewers }} &middot; Returning: {{ report.metrics.returning_viewers }}</p><p>Top country: {{ report.top_country or 'Not supplied' }}</p><p>Top device: {{ report.top_device or 'Not supplied' }}</p></article>
+    <article class="panel"><p class="eyebrow">Discovery</p><h2>Traffic</h2><p>Impressions: {{ report.metrics.impressions }}</p><p>Top source: {{ report.top_traffic_source or 'Not supplied' }}</p><ul>{% for source, count in report.metrics.traffic_sources.items() %}<li>{{ source }}: {{ count }}</li>{% endfor %}</ul></article>
+    <article class="panel"><p class="eyebrow">Observations</p><h2>Deterministic summary</h2><ul>{% for item in report.observations %}<li>{{ item }}</li>{% endfor %}</ul></article>
+</section>
+{% else %}
+<section class="panel page-panel"><p class="empty-state">No manually supplied metrics are available.</p></section>
+{% endif %}
+{% endblock %}

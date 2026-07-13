@@ -8,6 +8,7 @@ from uuid import NAMESPACE_URL, uuid5
 from agents.base_employee import BaseEmployee
 from agents.directors import (
     CreativeDirector,
+    DistributionDirector,
     ProductionDirector,
     ResearchDirector,
     SEODirector,
@@ -39,7 +40,15 @@ from agents.specialists import (
     StoryDirector,
     SubtitleDesigner,
     ThumbnailPsychologist,
+    AnalyticsEngineer,
+    LearningEngineer,
+    MetadataSpecialist,
+    PerformanceAnalyst,
+    SEOPublisher,
+    ShortFormDistributionSpecialist,
+    YouTubeDistributionSpecialist,
 )
+from analytics.providers import DeterministicAnalyticsProvider
 from intelligence.providers import DeterministicIntelligenceProvider
 from marketing import MarketingDirector
 
@@ -70,6 +79,7 @@ def create_company_roster() -> CompanyRoster:
     """Construct the current AuraAI company from existing classes."""
 
     intelligence_provider = DeterministicIntelligenceProvider()
+    analytics_provider = DeterministicAnalyticsProvider()
     roster = CompanyRoster(
         executives=(AuraCEO(), AuraCOO()),
         directors=(
@@ -79,6 +89,7 @@ def create_company_roster() -> CompanyRoster:
             SEODirector(intelligence_provider),
             ProductionDirector(),
             CreativeDirector(),
+            DistributionDirector(),
         ),
         specialists=(
             TrendHunter(),
@@ -105,6 +116,13 @@ def create_company_roster() -> CompanyRoster:
             ThumbnailPsychologist(),
             RetentionAuditor(),
             FactualityReviewer(),
+            YouTubeDistributionSpecialist(),
+            ShortFormDistributionSpecialist(),
+            SEOPublisher(),
+            MetadataSpecialist(),
+            AnalyticsEngineer(analytics_provider),
+            PerformanceAnalyst(),
+            LearningEngineer(analytics_provider),
         ),
     )
 

@@ -208,6 +208,51 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             active_path="/creative-quality",
         )
 
+    @router.get("/distribution", response_class=HTMLResponse)
+    def distribution_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render local publish preparation and founder approval state."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="distribution.html",
+            page_title="Distribution",
+            active_path="/distribution",
+        )
+
+    @router.get("/analytics", response_class=HTMLResponse)
+    def analytics_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render manually supplied metrics and calculated rates."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="analytics.html",
+            page_title="Analytics",
+            active_path="/analytics",
+        )
+
+    @router.get("/learning", response_class=HTMLResponse)
+    def learning_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render deterministic learning recommendations."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="learning.html",
+            page_title="Learning",
+            active_path="/learning",
+        )
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,

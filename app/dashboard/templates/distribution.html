@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block heading %}Distribution Control Center{% endblock %}
+{% block content %}
+{% set package = snapshot.distribution %}
+{% if package %}
+<section class="panel page-panel">
+    <p class="eyebrow">Founder-controlled local preparation</p>
+    <h2>{{ package.publication_status.value | replace('_', ' ') | title }}</h2>
+    <p>AuraAI prepared metadata and instructions only. Automatic publishing is disabled.</p>
+    <p><strong>Source:</strong> {{ package.source_kind }} &middot; <strong>Automatic publishing:</strong> No</p>
+</section>
+<section class="dashboard-grid">
+    <article class="panel">
+        <p class="eyebrow">Manual approval</p><h2>Publish checklist</h2>
+        <ul>{% for item in package.publish_checklist %}<li>{{ 'Complete' if item.completed else 'Pending' }} &mdash; {{ item.label }}: {{ item.guidance }}</li>{% endfor %}</ul>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Metadata</p><h2>{{ package.metadata_package.title }}</h2>
+        <p>{{ package.metadata_package.description }}</p>
+        <p><strong>Playlist:</strong> {{ package.playlist_suggestion }}</p>
+        <p><strong>Tags:</strong> {{ package.tags | join(', ') }}</p>
+        <p><strong>Hashtags:</strong> {{ package.hashtags | join(' ') }}</p>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">SEO</p><h2>Chapter markers</h2>
+        <ul>{% for chapter in package.chapter_markers %}<li>{{ chapter.timestamp_seconds }}s &mdash; {{ chapter.title }}</li>{% else %}<li>No chapters supplied.</li>{% endfor %}</ul>
+        <h3>Search notes</h3><ul>{% for note in package.metadata_package.seo_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Platforms</p><h2>Prepared packages</h2>
+        <ul>{% for item in [package.youtube_package, package.shorts_package, package.instagram_package, package.tiktok_package, package.linkedin_package, package.twitter_x_package, package.community_post] %}<li>{{ item.channel.value | replace('_', ' ') | title }} &mdash; {{ item.content_role }}</li>{% endfor %}</ul>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Manual workflow</p><h2>Upload instructions</h2>
+        <ol>{% for item in package.upload_instructions %}<li>{{ item.channel.value | replace('_', ' ') | title }}: {{ item.instruction }}</li>{% endfor %}</ol>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Thumbnail</p><h2>{{ package.thumbnail_package.headline }}</h2>
+        <p>{{ package.thumbnail_package.alt_text }}</p>
+        <ul>{% for note in package.thumbnail_package.safety_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+    </article>
+</section>
+{% else %}
+<section class="panel page-panel"><p class="empty-state">No local Distribution package supplied. Nothing has been published.</p></section>
+{% endif %}
+{% endblock %}

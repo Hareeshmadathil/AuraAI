@@ -15,7 +15,7 @@ def test_creative_quality_dashboard_displays_scores_gate_and_roster() -> None:
     assert "Founder Review Separate" in response.text
     assert data["creative_quality"]["scores"]["overall"] > 0
     assert data["creative_quality"]["gate"]["status"] == "passed"
-    assert len(data["employees"]) == 32
+    assert len(data["employees"]) == 40
     assert {item["job_title"] for item in data["employees"]} >= {
         "Creative Quality Director",
         "Hook Architect",

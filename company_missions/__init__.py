@@ -34,6 +34,9 @@ from company_missions.content_quality_review import (
     create_creative_quality_demo_dashboard_service,
     create_quality_render_demo_dashboard_service,
 )
+from company_missions.distribution_analytics import (
+    create_distribution_demo_dashboard_service,
+)
 
 __all__ = [
     "NicheCandidateInput",
@@ -56,4 +59,5 @@ __all__ = [
     "create_content_quality_pipeline",
     "create_creative_quality_demo_dashboard_service",
     "create_quality_render_demo_dashboard_service",
+    "create_distribution_demo_dashboard_service",
 ]

@@ -136,4 +136,14 @@ def create_quality_render_demo_app() -> FastAPI:
     )
 
 
+def create_distribution_demo_app() -> FastAPI:
+    """Create the cumulative local Distribution and Analytics demo."""
+
+    from company_missions import create_distribution_demo_dashboard_service
+
+    return create_app(
+        dashboard_service=create_distribution_demo_dashboard_service()
+    )
+
+
 app = create_app()

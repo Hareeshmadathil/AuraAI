@@ -21,6 +21,8 @@ from core.constants import (
 from core.models import AuraBaseModel, utc_now
 from intelligence.models import IntelligencePackage
 from creative_quality.models import CreativeQualityPackage
+from analytics.models import AnalyticsReport, LearningReport
+from distribution.models import DistributionPackage
 
 
 class DashboardMode(StrEnum):
@@ -247,3 +249,6 @@ class DashboardSnapshot(AuraBaseModel):
     intelligence: IntelligencePackage | None = None
     niche_discovery: dict[str, Any] | None = None
     creative_quality: CreativeQualityPackage | None = None
+    distribution: DistributionPackage | None = None
+    analytics: AnalyticsReport | None = None
+    learning: LearningReport | None = None

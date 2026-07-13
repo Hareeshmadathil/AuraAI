@@ -29,6 +29,11 @@ from creative_quality.models import (
     CreativeQualityPipelineResult,
 )
 from creative_quality.pipeline import create_creative_quality_pipeline
+from analytics.models import AnalyticsReport, LearningReport, ManualPerformanceMetrics
+from analytics.pipeline import create_analytics_pipelines
+from distribution.approval import DistributionApprovalService
+from distribution.models import DistributionChannel, DistributionPackage
+from distribution.pipeline import create_distribution_pipeline
 from production.models import ProductionPackage, ProductionPipelineResult
 from production.rendering.models import LocalRenderResult
 from runtime_engine.dashboard_adapter import (
@@ -84,6 +89,9 @@ def build_unified_dashboard_context(
         DashboardContextStage.RENDER,
         DashboardContextStage.CREATIVE_QUALITY,
         DashboardContextStage.QUALITY_RENDER,
+        DashboardContextStage.DISTRIBUTION,
+        DashboardContextStage.ANALYTICS,
+        DashboardContextStage.LEARNING,
     }:
         production_pipeline, _ = create_content_production_pipeline(
             state_manager=state,
@@ -104,6 +112,9 @@ def build_unified_dashboard_context(
     if stage in {
         DashboardContextStage.RENDER,
         DashboardContextStage.QUALITY_RENDER,
+        DashboardContextStage.DISTRIBUTION,
+        DashboardContextStage.ANALYTICS,
+        DashboardContextStage.LEARNING,
     } and render_result is None:
         root = (output_root or _default_render_output_root()).resolve()
         loaded = load_latest_local_render_demo(root)
@@ -116,11 +127,17 @@ def build_unified_dashboard_context(
     if selected_production is None and stage in {
         DashboardContextStage.CREATIVE_QUALITY,
         DashboardContextStage.QUALITY_RENDER,
+        DashboardContextStage.DISTRIBUTION,
+        DashboardContextStage.ANALYTICS,
+        DashboardContextStage.LEARNING,
     }:
         raise RuntimeError("Creative Quality requires a production package.")
     if stage in {
         DashboardContextStage.CREATIVE_QUALITY,
         DashboardContextStage.QUALITY_RENDER,
+        DashboardContextStage.DISTRIBUTION,
+        DashboardContextStage.ANALYTICS,
+        DashboardContextStage.LEARNING,
     } and creative_quality_package is None:
         quality_pipeline = create_creative_quality_pipeline(
             state_manager=state,
@@ -148,6 +165,98 @@ def build_unified_dashboard_context(
             creative_quality_package,
             replace=True,
         )
+    distribution_package: DistributionPackage | None = None
+    analytics_report: AnalyticsReport | None = None
+    learning_report: LearningReport | None = None
+    if stage in {
+        DashboardContextStage.DISTRIBUTION,
+        DashboardContextStage.ANALYTICS,
+        DashboardContextStage.LEARNING,
+    }:
+        distribution_pipeline = create_distribution_pipeline(
+            state_manager=state,
+            event_bus=bus,
+        )
+        distribution_operation = distribution_pipeline.run(
+            creative_quality_package
+        )
+        if not distribution_operation.success:
+            raise RuntimeError(distribution_operation.message)
+        distribution_package = DistributionPackage.model_validate(
+            distribution_operation.data["distribution_package"]
+        )
+    if stage in {
+        DashboardContextStage.ANALYTICS,
+        DashboardContextStage.LEARNING,
+    }:
+        approval = DistributionApprovalService(
+            state_manager=state,
+            event_bus=bus,
+        )
+        required_keys = {
+            item.key
+            for item in distribution_package.manual_approval_checklist.items
+            if item.required
+        }
+        distribution_package = approval.approve(
+            distribution_package,
+            founder_name="Demo Founder",
+            approval_note="Deterministic demo approval; no upload was performed.",
+            confirmed_checklist_keys=required_keys,
+        )
+        distribution_package = approval.mark_ready_to_upload(
+            distribution_package
+        )
+        distribution_package = approval.confirm_manual_upload(
+            distribution_package,
+            founder_confirmed=True,
+        )
+        metrics = ManualPerformanceMetrics(
+            distribution_package_id=distribution_package.package_id,
+            platform=DistributionChannel.YOUTUBE,
+            views=1000,
+            click_through_rate=5.2,
+            average_view_duration_seconds=126,
+            retention_percentage=52,
+            watch_time_hours=35,
+            likes=80,
+            comments=12,
+            shares=9,
+            subscribers_gained=18,
+            impressions=19_231,
+            traffic_sources={"browse": 600, "search": 300, "external": 100},
+            countries={"India": 450, "United States": 350, "Other": 200},
+            devices={"mobile": 700, "desktop": 250, "tv": 50},
+            returning_viewers=280,
+            new_viewers=720,
+            upload_hour_utc=14,
+        )
+        analytics_pipeline, learning_pipeline = create_analytics_pipelines(
+            state_manager=state,
+            event_bus=bus,
+        )
+        analytics_operation = analytics_pipeline.run(
+            distribution_package,
+            metrics,
+        )
+        if not analytics_operation.success:
+            raise RuntimeError(analytics_operation.message)
+        analytics_report = AnalyticsReport.model_validate(
+            analytics_operation.data["analytics_report"]
+        )
+        distribution_package = DistributionPackage.model_validate(
+            analytics_operation.data["distribution_package"]
+        )
+        if stage == DashboardContextStage.LEARNING:
+            learning_operation = learning_pipeline.run(
+                distribution_package,
+                analytics_report,
+            )
+            if not learning_operation.success:
+                raise RuntimeError(learning_operation.message)
+            learning_report = LearningReport.model_validate(
+                learning_operation.data["learning_report"]
+            )
     snapshot = state.snapshot()
     return UnifiedDashboardContext(
         stage=stage,
@@ -176,6 +285,9 @@ def build_unified_dashboard_context(
             if creative_quality_package is not None
             else []
         ),
+        distribution_package=distribution_package,
+        analytics_report=analytics_report,
+        learning_report=learning_report,
         system_health=build_system_health_summary(snapshot),
         activity_events=build_activity_summaries(snapshot),
         niche_discovery=niche_result.model_dump(mode="json"),
@@ -184,6 +296,9 @@ def build_unified_dashboard_context(
             production_package=selected_production,
             render_result=render_result,
             creative_quality_package=creative_quality_package,
+            distribution_package=distribution_package,
+            analytics_report=analytics_report,
+            learning_report=learning_report,
         ),
     )
 
@@ -213,6 +328,9 @@ def _data_sources(
     production_package: ProductionPackage | None,
     render_result: LocalRenderResult | None,
     creative_quality_package: CreativeQualityPackage | None,
+    distribution_package: DistributionPackage | None = None,
+    analytics_report: AnalyticsReport | None = None,
+    learning_report: LearningReport | None = None,
 ) -> list[str]:
     values = ["deterministic_niche_discovery"]
     if intelligence_package is not None:
@@ -223,6 +341,12 @@ def _data_sources(
         values.append("validated_local_render_manifest")
     if creative_quality_package is not None:
         values.append("deterministic_creative_quality_heuristics")
+    if distribution_package is not None:
+        values.append("local_distribution_preparation")
+    if analytics_report is not None:
+        values.append("founder_supplied_demo_metrics")
+    if learning_report is not None:
+        values.append("deterministic_performance_learning")
     return values
 
 
@@ -247,5 +371,14 @@ def _data_label(stage: DashboardContextStage) -> str:
         ),
         DashboardContextStage.QUALITY_RENDER: (
             "QUALITY + LOCAL RENDER REVIEW / NOT PUBLISHED"
+        ),
+        DashboardContextStage.DISTRIBUTION: (
+            "DISTRIBUTION REVIEW / LOCAL ONLY / NOT PUBLISHED"
+        ),
+        DashboardContextStage.ANALYTICS: (
+            "MANUALLY SUPPLIED ANALYTICS / DEMO DATA / LOCAL ONLY"
+        ),
+        DashboardContextStage.LEARNING: (
+            "DISTRIBUTION + ANALYTICS + DETERMINISTIC LEARNING / DEMO"
         ),
     }[stage]
