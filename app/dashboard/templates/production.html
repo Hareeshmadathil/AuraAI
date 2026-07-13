@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block heading %}Production Command Center{% endblock %}
+{% block content %}
+{% set production = snapshot.production %}
+{% if production %}
+<section class="production-hero panel">
+    <div>
+        <p class="eyebrow">Review-ready production package</p>
+        <h2>{{ production.working_title }}</h2>
+        <p>{{ production.brand_name }} &middot; {{ production.topic }}</p>
+    </div>
+    <div class="production-labels" aria-label="Production state labels">
+        {% if production.sample_data %}<span class="demo-badge">SAMPLE</span>{% endif %}
+        <span class="demo-badge">PLANNED</span>
+        <span class="demo-badge">NOT RENDERED</span>
+    </div>
+</section>
+<section class="metrics production-metrics" aria-label="Production metrics">
+    {% for label, value in [
+        ('Script words', production.script_word_count),
+        ('Storyboard scenes', production.storyboard_scene_count),
+        ('Visual requests', production.visual_request_count),
+        ('Voice segments', production.voice_segment_count)
+    ] %}
+    <article class="metric-card"><p>{{ label }}</p><strong>{{ value }}</strong></article>
+    {% endfor %}
+</section>
+<section class="dashboard-grid">
+    <article class="panel">
+        <p class="eyebrow">Package</p><h2>Production status</h2>
+        <dl class="production-details">
+            <div><dt>Package</dt><dd>{{ production.package_id }}</dd></div>
+            <div><dt>Current stage</dt><dd>{{ production.current_stage | replace('_', ' ') | title }}</dd></div>
+            <div><dt>Selected style</dt><dd>{{ production.selected_style | replace('_', ' ') | title }}</dd></div>
+            <div><dt>Founder Approval</dt><dd>{{ production.founder_approval_status | replace('_', ' ') | title }}</dd></div>
+            <div><dt>Assembly</dt><dd>{{ production.assembly_status | replace('_', ' ') | upper }}</dd></div>
+            <div><dt>Subtitles</dt><dd>{{ production.subtitle_status }}</dd></div>
+        </dl>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Content brief</p><h2>Creative direction</h2>
+        <p>{{ production.content_brief_summary }}</p>
+        <h3>Completed stages</h3>
+        <div class="tag-list">{% for stage in production.completed_stages %}<span>{{ stage | replace('_', ' ') | title }}</span>{% endfor %}</div>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Packaging</p><h2>Thumbnail concepts</h2>
+        <ul>{% for concept in production.thumbnail_concepts %}<li>{{ concept }}</li>{% endfor %}</ul>
+        <h3>Short-form derivatives</h3>
+        <dl class="production-details">{% for platform, count in production.short_form_counts.items() %}<div><dt>{{ platform | replace('_', ' ') | title }}</dt><dd>{{ count }}</dd></div>{% endfor %}</dl>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Quality control</p><h2>{{ production.quality_score if production.quality_score is not none else 'Pending' }}{% if production.quality_score is not none %}%{% endif %}</h2>
+        <h3>Blockers</h3>
+        <ul>{% for item in production.blockers %}<li>{{ item }}</li>{% else %}<li>No quality blockers reported.</li>{% endfor %}</ul>
+        <h3>Warnings</h3>
+        <ul>{% for item in production.warnings %}<li>{{ item }}</li>{% else %}<li>No warnings reported.</li>{% endfor %}</ul>
+    </article>
+</section>
+{% else %}
+<section class="panel page-panel"><p class="empty-state">No production package supplied. SAMPLE / PLANNED / NOT RENDERED output will appear here after an explicit production run.</p></section>
+{% endif %}
+{% endblock %}

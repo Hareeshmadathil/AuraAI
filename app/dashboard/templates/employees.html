@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block heading %}Company Roster{% endblock %}
+{% block content %}
+<section class="dashboard-grid">
+{% for heading, group in [('Executive Team', snapshot.executives), ('Directors', snapshot.directors), ('Specialists', snapshot.specialists)] %}
+<article class="panel {% if heading == 'Specialists' %}panel-wide{% endif %}">
+    <header class="panel-header"><h2>{{ heading }}</h2><span>{{ group | length }}</span></header>
+    <div class="card-list">
+    {% for employee in group %}
+        <div class="list-card"><div class="avatar">{{ employee.name[0] }}</div><div><h3>{{ employee.name }}</h3><p>{{ employee.job_title }} &middot; {{ employee.department.value | title }}</p></div><span class="state">{{ employee.status.value | title }}</span></div>
+    {% else %}<p class="empty-state">No {{ heading | lower }} supplied.</p>{% endfor %}
+    </div>
+</article>
+{% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,193 @@
+"""Typed read models for the AuraAI command-center dashboard."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from uuid import UUID
+
+from pydantic import Field
+
+from core.constants import (
+    AgentStatus,
+    DecisionOutcome,
+    DecisionType,
+    DepartmentName,
+    JobStatus,
+    MissionStatus,
+    TaskPriority,
+)
+from core.models import AuraBaseModel, utc_now
+
+
+class DashboardMode(StrEnum):
+    """Explicit source mode for a dashboard snapshot."""
+
+    EMPTY = "empty"
+    DEMO = "demo"
+    INJECTED = "injected"
+
+
+class EmployeeGroup(StrEnum):
+    """Organizational level used by dashboard roster views."""
+
+    EXECUTIVE = "executive"
+    DIRECTOR = "director"
+    SPECIALIST = "specialist"
+
+
+class ActivityEventType(StrEnum):
+    """Supported dashboard activity categories."""
+
+    EMPLOYEE = "employee"
+    MISSION = "mission"
+    DECISION = "decision"
+    WORKFLOW = "workflow"
+    SYSTEM = "system"
+
+
+class SystemHealthStatus(StrEnum):
+    """Overall state reported by the local dashboard."""
+
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNAVAILABLE = "unavailable"
+
+
+class DashboardMetric(AuraBaseModel):
+    """One high-level command-center metric."""
+
+    key: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=150)
+    value: int = Field(ge=0)
+    description: str = Field(default="", max_length=500)
+
+
+class EmployeeStatusSummary(AuraBaseModel):
+    """Dashboard-safe employee identity and runtime state."""
+
+    agent_id: UUID
+    name: str
+    job_title: str
+    department: DepartmentName
+    status: AgentStatus
+    enabled: bool
+    group: EmployeeGroup
+
+
+class MissionStatusSummary(AuraBaseModel):
+    """Dashboard-safe mission lifecycle summary."""
+
+    mission_id: UUID
+    title: str
+    description: str = ""
+    status: MissionStatus
+    priority: TaskPriority
+    lead_department: DepartmentName | None = None
+    progress_percentage: float = Field(ge=0.0, le=100.0)
+
+
+class WorkflowStatusSummary(AuraBaseModel):
+    """Dashboard-safe workflow lifecycle summary."""
+
+    workflow_id: UUID
+    name: str
+    description: str = ""
+    status: JobStatus
+    progress_percentage: float = Field(ge=0.0, le=100.0)
+    task_count: int = Field(ge=0)
+
+
+class ExecutiveDecisionSummary(AuraBaseModel):
+    """Dashboard-safe executive decision summary."""
+
+    decision_id: UUID
+    title: str
+    decision_type: DecisionType
+    outcome: DecisionOutcome
+    decision_maker_name: str
+    requires_user_confirmation: bool
+    user_confirmed: bool
+    created_at: datetime
+
+
+class ActivityEventSummary(AuraBaseModel):
+    """One recent event derived from explicitly supplied state."""
+
+    event_id: str = Field(min_length=1, max_length=200)
+    event_type: ActivityEventType
+    title: str = Field(min_length=1, max_length=250)
+    detail: str = Field(min_length=1, max_length=1000)
+    occurred_at: datetime
+
+
+class SystemHealthSummary(AuraBaseModel):
+    """Operational health details supplied to the dashboard."""
+
+    status: SystemHealthStatus = SystemHealthStatus.HEALTHY
+    web_service_operational: bool = True
+    test_status: str = Field(default="not_supplied", max_length=100)
+    tests_passed: int | None = Field(default=None, ge=0)
+    tests_total: int | None = Field(default=None, ge=0)
+    message: str = Field(
+        default="Local dashboard service is operational.",
+        max_length=1000,
+    )
+
+
+class ProductionStatusSummary(AuraBaseModel):
+    """Dashboard-safe summary of one structured production package."""
+
+    package_id: UUID
+    brand_name: str
+    topic: str
+    working_title: str
+    current_stage: str
+    completed_stages: list[str] = Field(default_factory=list)
+    selected_style: str
+    content_brief_summary: str
+    script_word_count: int = Field(ge=0)
+    storyboard_scene_count: int = Field(ge=0)
+    visual_request_count: int = Field(ge=0)
+    voice_segment_count: int = Field(ge=0)
+    thumbnail_concepts: list[str] = Field(default_factory=list)
+    short_form_counts: dict[str, int] = Field(default_factory=dict)
+    subtitle_status: str
+    assembly_status: str
+    quality_score: float | None = Field(default=None, ge=0, le=100)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    founder_approval_status: str
+    sample_data: bool
+    media_rendered: bool = False
+
+
+class DashboardSnapshot(AuraBaseModel):
+    """Immutable point-in-time view of AuraAI operating state."""
+
+    mode: DashboardMode = DashboardMode.EMPTY
+    data_label: str = "EMPTY STATE"
+    generated_at: datetime = Field(default_factory=utc_now)
+    active_missions: int = Field(default=0, ge=0)
+    employees_working: int = Field(default=0, ge=0)
+    employees_idle: int = Field(default=0, ge=0)
+    pending_decisions: int = Field(default=0, ge=0)
+    active_workflows: int = Field(default=0, ge=0)
+    employee_status_counts: dict[AgentStatus, int] = Field(
+        default_factory=dict
+    )
+    metrics: list[DashboardMetric] = Field(default_factory=list)
+    employees: list[EmployeeStatusSummary] = Field(default_factory=list)
+    executives: list[EmployeeStatusSummary] = Field(default_factory=list)
+    directors: list[EmployeeStatusSummary] = Field(default_factory=list)
+    specialists: list[EmployeeStatusSummary] = Field(default_factory=list)
+    missions: list[MissionStatusSummary] = Field(default_factory=list)
+    workflows: list[WorkflowStatusSummary] = Field(default_factory=list)
+    recent_decisions: list[ExecutiveDecisionSummary] = Field(
+        default_factory=list
+    )
+    activity: list[ActivityEventSummary] = Field(default_factory=list)
+    system_health: SystemHealthSummary = Field(
+        default_factory=SystemHealthSummary
+    )
+    production: ProductionStatusSummary | None = None

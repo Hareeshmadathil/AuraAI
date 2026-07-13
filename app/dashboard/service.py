@@ -1,0 +1,401 @@
+"""Dashboard snapshot assembly without hidden runtime state."""
+
+from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Iterable
+from typing import Any
+
+from app.dashboard.models import (
+    ActivityEventSummary,
+    ActivityEventType,
+    DashboardMetric,
+    DashboardMode,
+    DashboardSnapshot,
+    EmployeeGroup,
+    EmployeeStatusSummary,
+    ExecutiveDecisionSummary,
+    MissionStatusSummary,
+    SystemHealthSummary,
+    ProductionStatusSummary,
+    WorkflowStatusSummary,
+)
+from core.constants import (
+    AgentStatus,
+    DecisionOutcome,
+    DepartmentName,
+    JobStatus,
+    MissionStatus,
+)
+from core.decision import DecisionRecord
+from core.mission import MissionRecord
+from core.models import AgentIdentity, WorkflowRecord
+from production.models import ProductionPackage
+
+
+class DashboardService:
+    """Build dashboard snapshots from explicitly supplied AuraAI state."""
+
+    def __init__(
+        self,
+        *,
+        mode: DashboardMode = DashboardMode.EMPTY,
+        data_label: str | None = None,
+        employees: Iterable[AgentIdentity | Any] = (),
+        missions: Iterable[MissionRecord] = (),
+        decisions: Iterable[DecisionRecord] = (),
+        workflows: Iterable[WorkflowRecord | Any] = (),
+        system_health: SystemHealthSummary | None = None,
+        activity: Iterable[ActivityEventSummary] = (),
+        production_package: ProductionPackage | ProductionStatusSummary | None = None,
+    ) -> None:
+        """Store explicit state collections for snapshot generation."""
+
+        self._mode = mode
+        self._data_label = data_label or self._default_label(mode)
+        self._employees = tuple(employees)
+        self._missions = tuple(missions)
+        self._decisions = tuple(decisions)
+        self._workflows = tuple(workflows)
+        self._system_health = system_health or SystemHealthSummary()
+        self._activity = tuple(activity)
+        self._production_package = production_package
+
+    def build_snapshot(self) -> DashboardSnapshot:
+        """Create a validated point-in-time dashboard snapshot."""
+
+        employees = [
+            self._summarize_employee(employee)
+            for employee in self._employees
+        ]
+        missions = [
+            self._summarize_mission(mission)
+            for mission in self._missions
+        ]
+        sorted_decisions = sorted(
+            self._decisions,
+            key=lambda item: item.created_at,
+            reverse=True,
+        )
+        decisions = [
+            self._summarize_decision(decision)
+            for decision in sorted_decisions
+        ]
+        workflows = [
+            self._summarize_workflow(workflow)
+            for workflow in self._workflows
+        ]
+
+        status_counts = Counter(employee.status for employee in employees)
+        active_missions = self._count_active_missions(missions)
+        pending_decisions = sum(
+            decision.outcome == DecisionOutcome.PENDING
+            for decision in decisions
+        )
+        active_workflows = sum(
+            workflow.status == JobStatus.RUNNING
+            for workflow in workflows
+        )
+        employees_working = status_counts[AgentStatus.WORKING]
+
+        return DashboardSnapshot(
+            mode=self._mode,
+            data_label=self._data_label,
+            active_missions=active_missions,
+            employees_working=employees_working,
+            employees_idle=status_counts[AgentStatus.IDLE],
+            pending_decisions=pending_decisions,
+            active_workflows=active_workflows,
+            employee_status_counts=dict(status_counts),
+            metrics=self._build_metrics(
+                active_missions=active_missions,
+                employees_working=employees_working,
+                pending_decisions=pending_decisions,
+                active_workflows=active_workflows,
+            ),
+            employees=employees,
+            executives=self._employees_in_group(
+                employees,
+                EmployeeGroup.EXECUTIVE,
+            ),
+            directors=self._employees_in_group(
+                employees,
+                EmployeeGroup.DIRECTOR,
+            ),
+            specialists=self._employees_in_group(
+                employees,
+                EmployeeGroup.SPECIALIST,
+            ),
+            missions=missions,
+            workflows=workflows,
+            recent_decisions=decisions[:10],
+            activity=self._build_activity(sorted_decisions),
+            system_health=self._system_health,
+            production=self._summarize_production(self._production_package),
+        )
+
+    @staticmethod
+    def _summarize_production(
+        value: ProductionPackage | ProductionStatusSummary | None,
+    ) -> ProductionStatusSummary | None:
+        """Create a truthful production projection without media claims."""
+
+        if value is None or isinstance(value, ProductionStatusSummary):
+            return value
+        counts: dict[str, int] = {}
+        for asset in value.short_form_package.assets:
+            key = asset.platform.value
+            counts[key] = counts.get(key, 0) + 1
+        report = value.quality_report
+        return ProductionStatusSummary(
+            package_id=value.package_id,
+            brand_name=value.input.brand_name,
+            topic=value.input.topic,
+            working_title=value.input.working_title,
+            current_stage=value.current_stage.value,
+            completed_stages=[stage.value for stage in value.completed_stages],
+            selected_style=value.brief.selected_style.value,
+            content_brief_summary=value.brief.core_message,
+            script_word_count=value.script.word_count,
+            storyboard_scene_count=len(value.storyboard.scenes),
+            visual_request_count=len(value.visual_plan.requests),
+            voice_segment_count=len(value.voiceover_plan.segments),
+            thumbnail_concepts=[
+                concept.concept_name for concept in value.thumbnail_plan.concepts
+            ],
+            short_form_counts=counts,
+            subtitle_status="PLANNED / IN-MEMORY / NOT BURNED IN",
+            assembly_status=value.assembly_manifest.render_status.value,
+            quality_score=report.score_percentage if report else None,
+            blockers=list(report.blocking_issues) if report else [],
+            warnings=[*value.warnings, *(report.warnings if report else [])],
+            founder_approval_status=value.approval_status.value,
+            sample_data=value.input.sample_data,
+            media_rendered=False,
+        )
+
+    @staticmethod
+    def _summarize_employee(employee: AgentIdentity | Any) -> (
+        EmployeeStatusSummary
+    ):
+        """Normalize an AgentIdentity or BaseEmployee-like object."""
+
+        if isinstance(employee, EmployeeStatusSummary):
+            return employee
+        identity_value = getattr(employee, "identity", employee)
+        identity = AgentIdentity.model_validate(identity_value)
+        return EmployeeStatusSummary(
+            agent_id=identity.agent_id,
+            name=identity.name,
+            job_title=identity.job_title,
+            department=identity.department,
+            status=identity.status,
+            enabled=identity.enabled,
+            group=DashboardService._classify_employee(identity),
+        )
+
+    @staticmethod
+    def _classify_employee(identity: AgentIdentity) -> EmployeeGroup:
+        """Classify an employee from existing identity information."""
+
+        if identity.department == DepartmentName.EXECUTIVE:
+            return EmployeeGroup.EXECUTIVE
+        if identity.job_title.endswith("Director"):
+            return EmployeeGroup.DIRECTOR
+        return EmployeeGroup.SPECIALIST
+
+    @staticmethod
+    def _employees_in_group(
+        employees: list[EmployeeStatusSummary],
+        group: EmployeeGroup,
+    ) -> list[EmployeeStatusSummary]:
+        """Return employees belonging to one organizational level."""
+
+        return [employee for employee in employees if employee.group == group]
+
+    @staticmethod
+    def _summarize_mission(mission: MissionRecord) -> MissionStatusSummary:
+        """Convert a mission into dashboard-safe data."""
+
+        if isinstance(mission, MissionStatusSummary):
+            return mission
+        return MissionStatusSummary(
+            mission_id=mission.mission_id,
+            title=mission.title,
+            description=mission.description,
+            status=mission.status,
+            priority=mission.priority,
+            lead_department=mission.lead_department,
+            progress_percentage=mission.progress_percentage,
+        )
+
+    @staticmethod
+    def _summarize_decision(
+        decision: DecisionRecord,
+    ) -> ExecutiveDecisionSummary:
+        """Convert a decision into dashboard-safe data."""
+
+        return ExecutiveDecisionSummary(
+            decision_id=decision.decision_id,
+            title=decision.title,
+            decision_type=decision.decision_type,
+            outcome=decision.outcome,
+            decision_maker_name=decision.decision_maker_name,
+            requires_user_confirmation=(
+                decision.requires_user_confirmation
+            ),
+            user_confirmed=decision.user_confirmed,
+            created_at=decision.created_at,
+        )
+
+    @staticmethod
+    def _summarize_workflow(
+        workflow: WorkflowRecord | Any,
+    ) -> WorkflowStatusSummary:
+        """Normalize a WorkflowRecord or BaseWorkflow-like object."""
+
+        if isinstance(workflow, WorkflowStatusSummary):
+            return workflow
+        record_value = getattr(workflow, "record", workflow)
+        record = WorkflowRecord.model_validate(record_value)
+        progress_value = getattr(workflow, "progress_percentage", None)
+        progress = (
+            float(progress_value)
+            if progress_value is not None
+            else DashboardService._workflow_record_progress(record)
+        )
+        return WorkflowStatusSummary(
+            workflow_id=record.workflow_id,
+            name=record.name,
+            description=record.description,
+            status=record.status,
+            progress_percentage=progress,
+            task_count=len(record.task_ids),
+        )
+
+    @staticmethod
+    def _workflow_record_progress(record: WorkflowRecord) -> float:
+        """Infer safe progress when only a WorkflowRecord is supplied."""
+
+        if record.status == JobStatus.COMPLETED:
+            return 100.0
+        return 0.0
+
+    @staticmethod
+    def _count_active_missions(
+        missions: list[MissionStatusSummary],
+    ) -> int:
+        """Count missions that are being planned or executed."""
+
+        active_statuses = {
+            MissionStatus.PLANNING,
+            MissionStatus.ACTIVE,
+            MissionStatus.PAUSED,
+        }
+        return sum(mission.status in active_statuses for mission in missions)
+
+    def _build_activity(
+        self,
+        sorted_decisions: list[DecisionRecord],
+    ) -> list[ActivityEventSummary]:
+        """Create recent activity from explicit state and supplied events."""
+
+        events = list(self._activity)
+        events.extend(
+            ActivityEventSummary(
+                event_id=f"mission:{mission.mission_id}",
+                event_type=ActivityEventType.MISSION,
+                title=mission.title,
+                detail=(
+                    "Mission status is "
+                    f"{mission.status.value.replace('_', ' ')}."
+                ),
+                occurred_at=mission.updated_at,
+            )
+            for mission in self._missions
+            if isinstance(mission, MissionRecord)
+        )
+        events.extend(
+            ActivityEventSummary(
+                event_id=f"decision:{decision.decision_id}",
+                event_type=ActivityEventType.DECISION,
+                title=decision.title,
+                detail=(
+                    "Executive decision is "
+                    f"{decision.outcome.value.replace('_', ' ')}."
+                ),
+                occurred_at=decision.updated_at,
+            )
+            for decision in sorted_decisions
+        )
+
+        for workflow in self._workflows:
+            if isinstance(workflow, WorkflowStatusSummary):
+                continue
+            record_value = getattr(workflow, "record", workflow)
+            record = WorkflowRecord.model_validate(record_value)
+            events.append(
+                ActivityEventSummary(
+                    event_id=f"workflow:{record.workflow_id}",
+                    event_type=ActivityEventType.WORKFLOW,
+                    title=record.name,
+                    detail=(
+                        "Workflow status is "
+                        f"{record.status.value.replace('_', ' ')}."
+                    ),
+                    occurred_at=record.updated_at,
+                )
+            )
+
+        return sorted(
+            events,
+            key=lambda event: event.occurred_at,
+            reverse=True,
+        )[:20]
+
+    @staticmethod
+    def _default_label(mode: DashboardMode) -> str:
+        """Return a clear label for the dashboard data source."""
+
+        return {
+            DashboardMode.EMPTY: "EMPTY STATE",
+            DashboardMode.DEMO: "DEMO / LOCAL SAMPLE DATA",
+            DashboardMode.INJECTED: "INJECTED RUNTIME STATE",
+        }[mode]
+
+    @staticmethod
+    def _build_metrics(
+        *,
+        active_missions: int,
+        employees_working: int,
+        pending_decisions: int,
+        active_workflows: int,
+    ) -> list[DashboardMetric]:
+        """Build the stable set of command-center metric cards."""
+
+        return [
+            DashboardMetric(
+                key="active_missions",
+                label="Active Missions",
+                value=active_missions,
+                description="Missions being planned or executed.",
+            ),
+            DashboardMetric(
+                key="employees_working",
+                label="Employees Working",
+                value=employees_working,
+                description="AI employees currently performing tasks.",
+            ),
+            DashboardMetric(
+                key="pending_decisions",
+                label="Pending Decisions",
+                value=pending_decisions,
+                description="Executive decisions awaiting an outcome.",
+            ),
+            DashboardMetric(
+                key="active_workflows",
+                label="Active Workflows",
+                value=active_workflows,
+                description="Operational workflows currently running.",
+            ),
+        ]

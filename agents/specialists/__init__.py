@@ -21,6 +21,13 @@ from agents.specialists.platform_manager_base import (
     PlatformPublishingPlan,
 )
 from agents.specialists.youtube_manager import YouTubeManager
+from agents.specialists.quality_controller import QualityController
+from agents.specialists.script_writer import ScriptWriter
+from agents.specialists.shorts_editor import ShortsEditor
+from agents.specialists.storyboard_artist import StoryboardArtist
+from agents.specialists.thumbnail_designer import ThumbnailDesigner
+from agents.specialists.video_editor import VideoEditor
+from agents.specialists.voice_artist import VoiceArtist
 
 __all__ = [
     "TrendCandidate",
@@ -36,4 +43,11 @@ __all__ = [
     "PlatformPublishingPlan",
     "TikTokManager",
     "YouTubeManager",
+    "QualityController",
+    "ScriptWriter",
+    "ShortsEditor",
+    "StoryboardArtist",
+    "ThumbnailDesigner",
+    "VideoEditor",
+    "VoiceArtist",
 ]

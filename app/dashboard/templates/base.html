@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="AuraAI local operating dashboard">
+    <title>{{ page_title | default('Command Center') }} | AuraAI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/dashboard.css') }}">
+</head>
+<body>
+    <a class="skip-link" href="#main-content">Skip to dashboard</a>
+    <div class="app-shell">
+        <aside class="sidebar" aria-label="Dashboard navigation">
+            <a class="brand" href="/">Aura<span>AI</span></a>
+            <nav>
+                {% for path, label in [
+                    ('/', 'Command Center'),
+                    ('/employees', 'Employees'),
+                    ('/missions', 'Missions'),
+                    ('/workflows', 'Workflows'),
+                    ('/decisions', 'Decisions'),
+                    ('/research', 'Research'),
+                    ('/marketing', 'Marketing'),
+                    ('/production', 'Production'),
+                    ('/system', 'System')
+                ] %}
+                <a href="{{ path }}" {% if active_path == path %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
+                {% endfor %}
+            </nav>
+            <p>Local interface only</p>
+        </aside>
+        <div class="content-shell">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">Autonomous Creator OS</p>
+                    <h1>{% block heading %}AuraAI Command Center{% endblock %}</h1>
+                </div>
+                <div class="header-badges">
+                    {% if snapshot.mode.value == 'demo' %}
+                    <span class="demo-badge">DEMO DATA</span>
+                    {% endif %}
+                    <div class="system-chip" aria-label="System status">
+                        <span class="status-dot" aria-hidden="true"></span>
+                        {{ snapshot.system_health.status.value | title }}
+                    </div>
+                </div>
+            </header>
+            <p class="data-label">{{ snapshot.data_label }}</p>
+            <main id="main-content">
+                {% block content %}{% endblock %}
+            </main>
+            <footer>
+                Local operational view &middot; Generated {{ snapshot.generated_at.strftime('%Y-%m-%d %H:%M UTC') }}
+            </footer>
+        </div>
+    </div>
+</body>
+</html>

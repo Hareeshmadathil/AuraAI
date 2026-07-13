@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="metrics" aria-label="Operating metrics">
+    {% for metric in snapshot.metrics %}
+    <article class="metric-card">
+        <p>{{ metric.label }}</p><strong>{{ metric.value }}</strong>
+        <span>{{ metric.description }}</span>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="dashboard-grid">
+    {% for heading, group, eyebrow in [
+        ('Executive Team', snapshot.executives, 'Leadership'),
+        ('Directors', snapshot.directors, 'Departments'),
+        ('Specialists', snapshot.specialists, 'Employees')
+    ] %}
+    <article class="panel {% if heading == 'Specialists' %}panel-wide{% endif %}">
+        <header class="panel-header"><div><p class="eyebrow">{{ eyebrow }}</p><h2>{{ heading }}</h2></div><span>{{ group | length }}</span></header>
+        <div class="card-list {% if heading == 'Specialists' %}roster-grid{% endif %}">
+            {% for employee in group %}
+            <div class="list-card">
+                <div class="avatar" aria-hidden="true">{{ employee.name[0] }}</div>
+                <div><h3>{{ employee.name }}</h3><p>{{ employee.job_title }} &middot; {{ employee.department.value | title }}</p></div>
+                <span class="state state-{{ employee.status.value }}">{{ employee.status.value | replace('_', ' ') | title }}</span>
+            </div>
+            {% else %}<p class="empty-state">No {{ heading | lower }} supplied.</p>{% endfor %}
+        </div>
+    </article>
+    {% endfor %}
+
+    <article class="panel">
+        <header class="panel-header"><div><p class="eyebrow">Objectives</p><h2>Active Missions</h2></div></header>
+        <div class="card-list">
+            {% for mission in snapshot.missions %}
+            <div class="list-card stacked">
+                <div><h3>{{ mission.title }}</h3><p>{{ mission.status.value | replace('_', ' ') | title }} &middot; {{ mission.lead_department.value | title if mission.lead_department else 'Unassigned' }}</p></div>
+                <div class="progress" aria-label="{{ mission.progress_percentage }} percent complete"><span style="width: {{ mission.progress_percentage }}%"></span></div>
+                <small>{{ mission.progress_percentage }}% complete</small>
+            </div>
+            {% else %}<p class="empty-state">No missions supplied. The command center is standing by.</p>{% endfor %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <header class="panel-header"><div><p class="eyebrow">Execution</p><h2>Active Workflows</h2></div></header>
+        <div class="card-list">
+            {% for workflow in snapshot.workflows %}
+            <div class="list-card stacked">
+                <div><h3>{{ workflow.name }}</h3><p>{{ workflow.status.value | title }} &middot; {{ workflow.task_count }} tasks</p></div>
+                <div class="progress" aria-label="{{ workflow.progress_percentage }} percent complete"><span style="width: {{ workflow.progress_percentage }}%"></span></div>
+                <small>{{ workflow.progress_percentage }}% complete</small>
+            </div>
+            {% else %}<p class="empty-state">No active workflows have been supplied.</p>{% endfor %}
+        </div>
+    </article>
+
+    <article class="panel panel-wide">
+        <header class="panel-header"><div><p class="eyebrow">Governance</p><h2>Recent Decisions</h2></div></header>
+        <div class="decision-table" role="region" aria-label="Recent executive decisions" tabindex="0">
+            <table><thead><tr><th>Decision</th><th>Owner</th><th>Type</th><th>Outcome</th></tr></thead><tbody>
+            {% for decision in snapshot.recent_decisions %}
+            <tr><td>{{ decision.title }}</td><td>{{ decision.decision_maker_name }}</td><td>{{ decision.decision_type.value | title }}</td><td><span class="state">{{ decision.outcome.value | replace('_', ' ') | title }}</span></td></tr>
+            {% else %}<tr><td colspan="4" class="empty-state">No executive decisions have been supplied.</td></tr>{% endfor %}
+            </tbody></table>
+        </div>
+    </article>
+
+    <article class="panel">
+        <header class="panel-header"><div><p class="eyebrow">Timeline</p><h2>Recent Activity</h2></div></header>
+        <ol class="timeline">
+            {% for event in snapshot.activity %}
+            <li><span aria-hidden="true"></span><div><h3>{{ event.title }}</h3><p>{{ event.detail }}</p><time>{{ event.occurred_at.strftime('%H:%M UTC') }}</time></div></li>
+            {% else %}<li class="empty-state">No recent activity supplied.</li>{% endfor %}
+        </ol>
+    </article>
+
+    <article class="panel system-panel">
+        <header class="panel-header"><div><p class="eyebrow">Diagnostics</p><h2>System Status</h2></div></header>
+        <dl>
+            <div><dt>Dashboard</dt><dd>{{ 'Operational' if snapshot.system_health.web_service_operational else 'Unavailable' }}</dd></div>
+            <div><dt>Tests</dt><dd>{{ snapshot.system_health.test_status | replace('_', ' ') | title }}</dd></div>
+            <div><dt>Runtime mode</dt><dd>{{ snapshot.mode.value | title }}</dd></div>
+            <div><dt>Working / Idle</dt><dd>{{ snapshot.employees_working }} / {{ snapshot.employees_idle }}</dd></div>
+        </dl><p>{{ snapshot.system_health.message }}</p>
+    </article>
+</section>
+{% endblock %}
