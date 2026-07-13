@@ -36,6 +36,7 @@ from runtime_engine.models import (
     RuntimeStatistics,
     RuntimeWorkflowState,
 )
+from providers.models import ProviderState
 
 
 class RuntimeStateManager:
@@ -58,6 +59,7 @@ class RuntimeStateManager:
         self._distribution_packages: dict[UUID, RuntimeDistributionState] = {}
         self._analytics_reports: dict[UUID, RuntimeAnalyticsState] = {}
         self._learning_reports: dict[UUID, RuntimeLearningState] = {}
+        self._provider_state = ProviderState()
 
     @property
     def mode(self) -> RuntimeMode:
@@ -453,6 +455,15 @@ class RuntimeStateManager:
     def list_learning_states(self) -> tuple[RuntimeLearningState, ...]:
         return tuple(self._learning_reports.values())
 
+    def update_provider_state(self, state: ProviderState) -> ProviderState:
+        """Replace the explicit provider projection without storing prompts."""
+
+        self._provider_state = ProviderState.model_validate(state)
+        return self._provider_state
+
+    def get_provider_state(self) -> ProviderState:
+        return self._provider_state.model_copy(deep=True)
+
     def build_statistics(self) -> RuntimeStatistics:
         mission_states = tuple(self._missions.values())
         workflow_states = tuple(self._workflows.values())
@@ -498,6 +509,7 @@ class RuntimeStateManager:
             distribution_packages=len(self._distribution_packages),
             analytics_reports=len(self._analytics_reports),
             learning_reports=len(self._learning_reports),
+            provider_requests=len(self._provider_state.usage),
         )
 
     def snapshot(self, recent_event_limit: int = 50) -> RuntimeSnapshot:
@@ -519,6 +531,7 @@ class RuntimeStateManager:
             distribution_packages=list(self._distribution_packages.values()),
             analytics_reports=list(self._analytics_reports.values()),
             learning_reports=list(self._learning_reports.values()),
+            provider_state=self._provider_state.model_copy(deep=True),
         )
 
     @staticmethod

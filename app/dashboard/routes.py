@@ -253,6 +253,21 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             active_path="/learning",
         )
 
+    @router.get("/providers", response_class=HTMLResponse)
+    def providers_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render provider availability, fallback, cache, and safe usage."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="providers.html",
+            page_title="AI Providers",
+            active_path="/providers",
+        )
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,

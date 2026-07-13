@@ -18,6 +18,7 @@ from marketing.marketing_strategy import (
     build_platform_assignments,
     expected_marketing_outputs,
 )
+from providers import PromptCategory, ProviderCapability, build_department_prompt
 
 
 class MarketingDirector(BaseEmployee):
@@ -41,6 +42,14 @@ class MarketingDirector(BaseEmployee):
         mission = self._require_mission(task.input_data)
         plan = self.create_marketing_plan(mission)
         generated_tasks = plan.to_task_records()
+        provider_result = self.request_provider(
+            ProviderCapability.MARKETING,
+            build_department_prompt(
+                "marketing_mission_advisory",
+                PromptCategory.STRATEGY,
+                mission.title,
+            ),
+        )
 
         return OperationResult.ok(
             "Marketing Director created the mission marketing plan.",
@@ -51,6 +60,11 @@ class MarketingDirector(BaseEmployee):
                     generated_task.model_dump(mode="json")
                     for generated_task in generated_tasks
                 ],
+                **(
+                    {"provider_advisory": provider_result.model_dump(mode="json")}
+                    if provider_result is not None
+                    else {}
+                ),
             },
         )
 

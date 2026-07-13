@@ -39,6 +39,7 @@ from intelligence.models import IntelligencePackage
 from creative_quality.models import CreativeQualityPackage
 from analytics.models import AnalyticsReport, LearningReport
 from distribution.models import DistributionPackage
+from providers.models import ProviderState
 
 
 class DashboardService:
@@ -63,6 +64,7 @@ class DashboardService:
         distribution_package: DistributionPackage | None = None,
         analytics_report: AnalyticsReport | None = None,
         learning_report: LearningReport | None = None,
+        provider_state: ProviderState | None = None,
     ) -> None:
         """Store explicit state collections for snapshot generation."""
 
@@ -83,6 +85,7 @@ class DashboardService:
         self._distribution_package = distribution_package
         self._analytics_report = analytics_report
         self._learning_report = learning_report
+        self._provider_state = provider_state or ProviderState()
 
     def build_snapshot(self) -> DashboardSnapshot:
         """Create a validated point-in-time dashboard snapshot."""
@@ -162,6 +165,7 @@ class DashboardService:
             distribution=self._distribution_package,
             analytics=self._analytics_report,
             learning=self._learning_report,
+            providers=self._provider_state,
         )
 
     def get_render_artifact(self, artifact_id: UUID) -> RenderedArtifact | None:

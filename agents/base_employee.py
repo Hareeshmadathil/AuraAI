@@ -10,7 +10,7 @@ retries, failures, and structured results.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Final
+from typing import TYPE_CHECKING, Final
 from uuid import UUID
 
 from core import (
@@ -26,6 +26,12 @@ from core import (
     get_logger,
     log_exception,
 )
+
+if TYPE_CHECKING:
+    from providers.models import ProviderCapability, ProviderOutput
+    from providers.prompt_template import ProviderPrompt
+    from providers.provider_result import ProviderResult
+    from providers.router import ProviderRouter
 
 
 _TERMINAL_TASK_STATUSES: Final[set[JobStatus]] = {
@@ -90,6 +96,7 @@ class BaseEmployee(ABC):
 
         self._current_task: TaskRecord | None = None
         self._last_result: OperationResult | None = None
+        self._provider_router: ProviderRouter | None = None
 
         logger_name = (
             f"employee."
@@ -175,6 +182,28 @@ class BaseEmployee(ABC):
                 AgentStatus.DISABLED,
             }
         )
+
+    @property
+    def provider_enabled(self) -> bool:
+        """Return whether an explicit provider router was injected."""
+
+        return self._provider_router is not None
+
+    def configure_provider_router(self, router: ProviderRouter | None) -> None:
+        """Inject or disable routing without changing employee identity."""
+
+        self._provider_router = router
+
+    def request_provider(
+        self,
+        capability: ProviderCapability,
+        prompt: ProviderPrompt,
+    ) -> ProviderResult[ProviderOutput] | None:
+        """Request optional typed advice while preserving local behavior."""
+
+        if self._provider_router is None:
+            return None
+        return self._provider_router.route(capability, prompt)
 
     def set_status(self, status: AgentStatus) -> None:
         """

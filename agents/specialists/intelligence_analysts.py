@@ -8,6 +8,7 @@ from agents.base_employee import BaseEmployee
 from core import AuraBaseModel, DepartmentName, OperationResult, TaskRecord
 from intelligence.providers import IntelligenceProvider
 from intelligence.task_inputs import require_niche
+from providers import PromptCategory, ProviderCapability, build_department_prompt
 
 
 class _IntelligenceAnalyst(BaseEmployee):
@@ -36,10 +37,26 @@ class _IntelligenceAnalyst(BaseEmployee):
     def perform_task(self, task: TaskRecord) -> OperationResult:
         """Produce one typed report from explicit task input."""
 
-        report = self._analyzer(require_niche(task))
+        niche = require_niche(task)
+        report = self._analyzer(niche)
+        provider_result = self.request_provider(
+            ProviderCapability.AUDIENCE,
+            build_department_prompt(
+                "intelligence_audience_advisory",
+                PromptCategory.RESEARCH,
+                niche,
+            ),
+        )
         return OperationResult.ok(
             f"{self.job_title} analysis completed.",
-            data={self.output_key: report.model_dump(mode="json")},
+            data={
+                self.output_key: report.model_dump(mode="json"),
+                **(
+                    {"provider_advisory": provider_result.model_dump(mode="json")}
+                    if provider_result is not None
+                    else {}
+                ),
+            },
         )
 
 

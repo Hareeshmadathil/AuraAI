@@ -189,3 +189,20 @@ python -m uvicorn app.main:create_distribution_demo_app --factory --reload
 ```
 
 Open `http://127.0.0.1:8000/distribution`, `/analytics`, or `/learning`.
+
+## AI Provider Layer
+
+AuraAI now exposes one provider-neutral registry and router for Research,
+Script, Hook, Story, SEO, Marketing, Review, Image Prompt, Video Prompt,
+Metadata, Audience, Analytics, Scene, Animation, and future Flow capabilities.
+Employees request typed capabilities and never import a vendor implementation.
+
+The local deterministic provider remains the default and fallback. The Gemini
+adapter is a disabled, credential-free stub: it does not read environment
+variables or perform network requests. Prompts are versioned typed objects;
+responses pass typed and safety validation. Optional caching and usage tracking
+are memory-only, and usage records contain metadata rather than prompt or
+response content.
+
+The local dashboard exposes safe provider status at
+`http://127.0.0.1:8000/providers`. No credentials are required.

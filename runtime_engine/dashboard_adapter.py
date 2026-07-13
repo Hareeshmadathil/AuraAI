@@ -90,6 +90,7 @@ def create_dashboard_service_from_runtime(
         distribution_package=distribution_package,
         analytics_report=analytics_report,
         learning_report=learning_report,
+        provider_state=runtime_snapshot.provider_state,
     )
 
 

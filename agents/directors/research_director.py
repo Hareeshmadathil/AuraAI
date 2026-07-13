@@ -26,6 +26,7 @@ from core import (
     ValidationError,
     utc_now,
 )
+from providers import PromptCategory, ProviderCapability, build_department_prompt
 
 
 class ResearchAssignment(AuraBaseModel):
@@ -175,6 +176,14 @@ class ResearchDirector(BaseEmployee):
 
         plan = self.create_research_plan(mission)
         generated_tasks = plan.to_task_records()
+        provider_result = self.request_provider(
+            ProviderCapability.RESEARCH,
+            build_department_prompt(
+                "research_mission_advisory",
+                PromptCategory.RESEARCH,
+                mission.title,
+            ),
+        )
 
         return OperationResult.ok(
             "Research Director created the mission research plan.",
@@ -185,6 +194,11 @@ class ResearchDirector(BaseEmployee):
                     generated_task.model_dump(mode="json")
                     for generated_task in generated_tasks
                 ],
+                **(
+                    {"provider_advisory": provider_result.model_dump(mode="json")}
+                    if provider_result is not None
+                    else {}
+                ),
             },
         )
 

@@ -23,6 +23,7 @@ from intelligence.models import IntelligencePackage
 from creative_quality.models import CreativeQualityPackage
 from analytics.models import AnalyticsReport, LearningReport
 from distribution.models import DistributionPackage
+from providers.models import ProviderState
 
 
 class DashboardMode(StrEnum):
@@ -252,3 +253,4 @@ class DashboardSnapshot(AuraBaseModel):
     distribution: DistributionPackage | None = None
     analytics: AnalyticsReport | None = None
     learning: LearningReport | None = None
+    providers: ProviderState = Field(default_factory=ProviderState)

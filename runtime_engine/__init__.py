@@ -13,6 +13,7 @@ from runtime_engine.models import (
     RuntimeRenderState,
     RuntimeSnapshot,
 )
+from providers.models import ProviderState
 from runtime_engine.orchestrator import RuntimeOrchestrator
 from runtime_engine.scheduler import RuntimeSchedule, RuntimeScheduler
 from runtime_engine.state_manager import RuntimeStateManager
@@ -31,6 +32,7 @@ __all__ = [
     "RuntimeLearningState",
     "RuntimeScheduler",
     "RuntimeSnapshot",
+    "ProviderState",
     "RuntimeStateManager",
     "create_dashboard_service_from_runtime",
 ]

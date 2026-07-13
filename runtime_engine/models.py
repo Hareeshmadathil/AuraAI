@@ -12,6 +12,7 @@ from pydantic import Field, field_validator, model_validator
 from core.constants import AgentStatus, DepartmentName, JobStatus, MissionStatus
 from core.decision import DecisionRecord
 from core.models import AuraBaseModel, utc_now
+from providers.models import ProviderState
 
 
 class RuntimeMode(StrEnum):
@@ -87,6 +88,10 @@ class RuntimeEventType(StrEnum):
     METRICS_IMPORTED = "metrics_imported"
     LEARNING_COMPLETED = "learning_completed"
     APPROVAL_CHANGED = "approval_changed"
+    PROVIDER_SELECTED = "provider_selected"
+    PROVIDER_FALLBACK = "provider_fallback"
+    PROVIDER_FAILED = "provider_failed"
+    PROVIDER_COMPLETED = "provider_completed"
 
 
 class RuntimeEventSeverity(StrEnum):
@@ -193,6 +198,7 @@ class RuntimeStatistics(AuraBaseModel):
     distribution_packages: int = Field(default=0, ge=0)
     analytics_reports: int = Field(default=0, ge=0)
     learning_reports: int = Field(default=0, ge=0)
+    provider_requests: int = Field(default=0, ge=0)
 
 
 class RuntimeProductionState(AuraBaseModel):
@@ -353,6 +359,7 @@ class RuntimeSnapshot(AuraBaseModel):
     )
     analytics_reports: list[RuntimeAnalyticsState] = Field(default_factory=list)
     learning_reports: list[RuntimeLearningState] = Field(default_factory=list)
+    provider_state: ProviderState = Field(default_factory=ProviderState)
 
     @field_validator("generated_at")
     @classmethod

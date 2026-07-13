@@ -8,6 +8,7 @@ from creative_quality.providers import (
 )
 from creative_quality.task_inputs import require_model
 from production.models import VideoScript
+from providers import PromptCategory, ProviderCapability, build_department_prompt
 
 
 class HookArchitect(BaseEmployee):
@@ -27,7 +28,22 @@ class HookArchitect(BaseEmployee):
 
         script = require_model(task.input_data, "video_script", VideoScript)
         analysis = self.provider.review_hook(script)
+        provider_result = self.request_provider(
+            ProviderCapability.REVIEW,
+            build_department_prompt(
+                "creative_quality_hook_advisory",
+                PromptCategory.REVIEW,
+                script.title,
+            ),
+        )
         return OperationResult.ok(
             "Hook Architect completed deterministic hook review.",
-            data={"hook_analysis": analysis.model_dump(mode="json")},
+            data={
+                "hook_analysis": analysis.model_dump(mode="json"),
+                **(
+                    {"provider_advisory": provider_result.model_dump(mode="json")}
+                    if provider_result is not None
+                    else {}
+                ),
+            },
         )

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block heading %}AI Provider Layer{% endblock %}
+{% block content %}
+<section class="panel" aria-labelledby="provider-status-title">
+    <div class="section-heading">
+        <div><p class="eyebrow">Provider-neutral routing</p><h2 id="provider-status-title">Available providers</h2></div>
+        <span class="status-chip">{{ snapshot.providers.usage | length }} requests</span>
+    </div>
+    {% if snapshot.providers.health %}
+    <div class="card-grid">
+        {% for provider in snapshot.providers.health %}
+        <article class="info-card">
+            <h3>{{ provider.name }}</h3>
+            <p>{{ provider.status | title }} · {{ 'Enabled' if provider.enabled else 'Disabled' }}</p>
+            <p>{{ provider.capabilities | length }} capabilities</p>
+            <p>{{ 'Deterministic fallback' if provider.fallback else 'Registered provider' }}</p>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">No provider registry was supplied. AuraAI remains operational through deterministic department behavior.</p>
+    {% endif %}
+</section>
+<section class="panel" aria-labelledby="provider-usage-title">
+    <div class="section-heading"><h2 id="provider-usage-title">Usage and fallback</h2></div>
+    <p>Cache entries: {{ snapshot.providers.cache_entries }} · Fallback requests: {{ snapshot.providers.fallback_requests }}</p>
+    {% if snapshot.providers.usage %}
+    <div class="table-wrap"><table><thead><tr><th>Provider</th><th>Capability</th><th>Latency</th><th>Fallback</th></tr></thead><tbody>
+        {% for usage in snapshot.providers.usage %}<tr><td>{{ usage.provider }}</td><td>{{ usage.capability.value }}</td><td>{{ '%.2f' | format(usage.latency_ms) }} ms</td><td>{{ 'Yes' if usage.fallback_used else 'No' }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty-state">No provider requests have been recorded.</p>{% endif %}
+</section>
+{% endblock %}
