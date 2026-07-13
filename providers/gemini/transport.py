@@ -15,7 +15,12 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from providers.exceptions import ProviderTimeoutError, ProviderUnavailableError
 from providers.gemini.config import ALLOWED_GEMINI_HOSTS
-from providers.gemini.models import GeminiRequest, GeminiTransportResponse
+from providers.gemini.models import (
+    GeminiParserStage,
+    GeminiRequest,
+    GeminiTransportResponse,
+    GeminiValidationStage,
+)
 from providers.gemini.redaction import redact_sensitive_text
 
 
@@ -30,6 +35,7 @@ class GeminiTransportErrorCode(StrEnum):
     REQUEST_TOO_LARGE = "request_too_large"
     RESPONSE_TOO_LARGE = "response_too_large"
     INVALID_ENDPOINT = "invalid_endpoint"
+    INVALID_RESPONSE_ENCODING = "invalid_response_encoding"
 
 
 class GeminiTransportError(ProviderUnavailableError):
@@ -46,7 +52,15 @@ class GeminiTransportError(ProviderUnavailableError):
         super().__init__(
             redact_sensitive_text(message),
             provider_name="gemini",
-            details={"safe_error_code": self.safe_code},
+            details={
+                "safe_error_code": self.safe_code,
+                "validation_stage": GeminiValidationStage.TRANSPORT.value,
+                "http_status": None,
+                "parser_stage": GeminiParserStage.NOT_STARTED.value,
+                "transport_completed": False,
+                "candidates_found": None,
+                "schema_validation_started": False,
+            },
             retryable=retryable,
         )
 
@@ -219,12 +233,16 @@ class HttpGeminiTransport:
             )
         url = (
             f"{self._base_url}/models/{quote(request.model, safe='')}:"
-            f"generateContent?key={quote(self._api_key, safe='')}"
+            "generateContent"
         )
         http_request = Request(
             url,
             data=body,
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "x-goog-api-key": self._api_key,
+            },
             method="POST",
         )
         started = perf_counter()
@@ -242,7 +260,14 @@ class HttpGeminiTransport:
                 code=GeminiTransportErrorCode.NETWORK_UNAVAILABLE,
                 retryable=True,
             ) from error
-        text = result.body.decode("utf-8", errors="strict")
+        try:
+            text = result.body.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise GeminiTransportError(
+                "Gemini response was not valid UTF-8.",
+                code=GeminiTransportErrorCode.INVALID_RESPONSE_ENCODING,
+                retryable=False,
+            ) from error
         return GeminiTransportResponse(
             request_id=request.request_id,
             status_code=result.status_code,
@@ -260,8 +285,12 @@ class HttpGeminiTransport:
                 "temperature": request.temperature,
                 "topP": request.top_p,
                 "maxOutputTokens": request.maximum_output_tokens,
-                "responseMimeType": "application/json",
-                "responseSchema": request.response_schema,
+                "responseFormat": {
+                    "text": {
+                        "mimeType": "application/json",
+                        "schema": request.response_schema,
+                    }
+                },
             },
             "safetySettings": request.safety_settings,
         }

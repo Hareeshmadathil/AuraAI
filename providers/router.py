@@ -90,7 +90,8 @@ class ProviderRouter:
             )
         except Exception as error:
             self.logger.warning(
-                "Provider failed for capability %s; deterministic fallback selected (%s).",
+                "Provider failed for capability %s; "
+                "deterministic fallback selected (%s).",
                 capability.value,
                 error.__class__.__name__,
             )
@@ -104,7 +105,7 @@ class ProviderRouter:
             if provider is not None:
                 recorder = getattr(provider, "record_fallback", None)
                 if callable(recorder):
-                    recorder(safe_error_code)
+                    recorder(safe_error_code, self._safe_diagnostic(error))
             if not self.fallback_enabled:
                 raise
             self._emit(
@@ -238,6 +239,31 @@ class ProviderRouter:
             getattr(error, "details", {}).get("safe_error_code")
             or getattr(error, "error_code", error.__class__.__name__)
         )
+
+    @staticmethod
+    def _safe_diagnostic(error: Exception) -> dict[str, object]:
+        allowed = {
+            "safe_error_code",
+            "validation_stage",
+            "http_status",
+            "parser_stage",
+            "transport_completed",
+            "candidates_found",
+            "schema_validation_started",
+        }
+        details = getattr(error, "details", {})
+        diagnostic = {
+            key: value for key, value in details.items() if key in allowed
+        }
+        diagnostic.setdefault(
+            "safe_error_code", ProviderRouter._safe_error_code(error)
+        )
+        diagnostic.setdefault("validation_stage", "router_validation")
+        diagnostic.setdefault("parser_stage", "not_started")
+        diagnostic.setdefault("transport_completed", False)
+        diagnostic.setdefault("candidates_found", None)
+        diagnostic.setdefault("schema_validation_started", False)
+        return diagnostic
 
     def _emit(
         self,

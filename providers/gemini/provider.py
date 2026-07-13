@@ -12,7 +12,13 @@ from time import sleep
 from core import AuraAIError, utc_now
 from providers.exceptions import ProviderRateLimitError, ProviderUnavailableError
 from providers.gemini.config import GeminiConfig
-from providers.gemini.models import GeminiRequest, GeminiValidatedResponse
+from providers.gemini.models import (
+    GeminiParserStage,
+    GeminiRequest,
+    GeminiSafeDiagnostic,
+    GeminiValidatedResponse,
+    GeminiValidationStage,
+)
 from providers.gemini.prompt_builder import GeminiPromptBuilder
 from providers.gemini.response_parser import GeminiResponseParser
 from providers.gemini.transport import (
@@ -82,6 +88,7 @@ class GeminiProvider:
         self._output_tokens = 0
         self._total_latency_ms = 0.0
         self._last_safe_error_code: str | None = None
+        self._last_safe_diagnostic: GeminiSafeDiagnostic | None = None
         self._last_request_at: datetime | None = None
         self._daily_counts: dict[date, int] = {}
 
@@ -145,6 +152,7 @@ class GeminiProvider:
             validated = self._execute_with_retries(request, capability)
         except Exception as error:
             self._last_safe_error_code = self._safe_error_code(error)
+            self._last_safe_diagnostic = self._diagnostic_from_error(error)
             raise
         self._record_success(validated)
         return ProviderResult[ProviderOutput](
@@ -156,10 +164,18 @@ class GeminiProvider:
             warnings=validated.validation_warnings,
         )
 
-    def record_fallback(self, safe_error_code: str | None = None) -> None:
+    def record_fallback(
+        self,
+        safe_error_code: str | None = None,
+        diagnostic: dict[str, object] | None = None,
+    ) -> None:
         self._failure_count += 1
         self._fallback_count += 1
         self._last_safe_error_code = safe_error_code
+        if diagnostic:
+            self._last_safe_diagnostic = GeminiSafeDiagnostic.model_validate(
+                diagnostic
+            )
 
     def safe_health(self) -> ProviderHealth:
         """Return operational metadata without credentials or content."""
@@ -196,6 +212,11 @@ class GeminiProvider:
             ),
             last_safe_error_code=self._last_safe_error_code,
             last_request_at=self._last_request_at,
+            details=(
+                self._last_safe_diagnostic.model_dump(mode="json")
+                if self._last_safe_diagnostic is not None
+                else {}
+            ),
         )
 
     def _execute_with_retries(
@@ -232,12 +253,30 @@ class GeminiProvider:
         self._output_tokens += value.usage.output_tokens
         self._total_latency_ms += value.usage.latency_ms
         self._last_safe_error_code = None
+        self._last_safe_diagnostic = None
 
     @staticmethod
     def _safe_error_code(error: Exception) -> str:
         if isinstance(error, AuraAIError):
             return str(error.details.get("safe_error_code") or error.error_code)
         return "UNEXPECTED_PROVIDER_ERROR"
+
+    @classmethod
+    def _diagnostic_from_error(cls, error: Exception) -> GeminiSafeDiagnostic:
+        details = getattr(error, "details", {})
+        values = {
+            key: details.get(key)
+            for key in GeminiSafeDiagnostic.model_fields
+            if key in details
+        }
+        values.setdefault("safe_error_code", cls._safe_error_code(error))
+        values.setdefault(
+            "validation_stage", GeminiValidationStage.TRANSPORT.value
+        )
+        values.setdefault("parser_stage", GeminiParserStage.NOT_STARTED.value)
+        values.setdefault("transport_completed", False)
+        values.setdefault("schema_validation_started", False)
+        return GeminiSafeDiagnostic.model_validate(values)
 
 
 def _build_cli_parser() -> argparse.ArgumentParser:
@@ -312,6 +351,27 @@ def main(
     print(f"tokens={result.usage.input_tokens}/{result.usage.output_tokens}")
     print(f"typed_response={result.output.__class__.__name__}")
     print(f"fallback={'true' if result.fallback_used else 'false'}")
+    if result.fallback_used:
+        state = router.build_state()
+        health = next(item for item in state.health if item.name == "gemini")
+        diagnostic = health.details
+        print(f"safe_error_code={health.last_safe_error_code or 'unknown'}")
+        print(f"validation_stage={diagnostic.get('validation_stage', 'unknown')}")
+        print(f"http_status={diagnostic.get('http_status') or 'none'}")
+        print(f"parser_stage={diagnostic.get('parser_stage', 'unknown')}")
+        print(
+            "transport_completed="
+            f"{str(bool(diagnostic.get('transport_completed'))).lower()}"
+        )
+        candidates = diagnostic.get("candidates_found")
+        print(
+            "candidates_found="
+            f"{str(candidates).lower() if candidates is not None else 'unknown'}"
+        )
+        print(
+            "schema_validation_started="
+            f"{str(bool(diagnostic.get('schema_validation_started'))).lower()}"
+        )
     return 0
 
 

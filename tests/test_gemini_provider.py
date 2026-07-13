@@ -82,7 +82,7 @@ def test_configured_router_selects_gemini_and_records_usage() -> None:
     assert gemini.input_tokens == 12
 
 
-def test_default_schema_supports_gemini_20_property_ordering() -> None:
+def test_default_schema_has_deterministic_property_ordering() -> None:
     transport = MockGeminiTransport(lambda request: response_for(request))
     provider = GeminiProvider(live_config(), transport)
 
@@ -96,6 +96,28 @@ def test_default_schema_supports_gemini_20_property_ordering() -> None:
         "findings",
         "source_guidance",
     ]
+
+
+def test_request_schema_removes_unsupported_keywords_without_weakening_models() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "finding": {
+                "type": "string",
+                "maxLength": 10,
+                "default": "unsafe transport default",
+            }
+        },
+        "required": ["finding"],
+        "examples": [{"finding": "example"}],
+    }
+
+    prepared = GeminiPromptBuilder._response_schema(schema)
+
+    assert prepared["propertyOrdering"] == ["finding"]
+    assert "examples" not in prepared
+    assert "maxLength" not in prepared["properties"]["finding"]
+    assert "default" not in prepared["properties"]["finding"]
 
 
 def test_legacy_unordered_schema_reproduces_validation_fallback() -> None:

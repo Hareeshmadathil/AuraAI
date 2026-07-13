@@ -18,7 +18,9 @@ from providers.exceptions import (
     ProviderValidationError,
 )
 from providers.gemini.models import (
+    GeminiParserStage,
     GeminiTransportResponse,
+    GeminiValidationStage,
     GeminiValidatedResponse,
 )
 from providers.gemini.safety import GeminiSafetyValidator
@@ -32,6 +34,27 @@ from providers.models import (
 
 ModelT = TypeVar("ModelT", bound=AuraBaseModel)
 _FENCED_JSON = re.compile(r"^```(?:json)?\s*(\{.*\})\s*```$", re.DOTALL)
+
+
+def _diagnostic(
+    safe_error_code: str,
+    validation_stage: GeminiValidationStage,
+    parser_stage: GeminiParserStage,
+    *,
+    http_status: int | None = None,
+    transport_completed: bool = True,
+    candidates_found: bool | None = None,
+    schema_validation_started: bool = False,
+) -> dict[str, object]:
+    return {
+        "safe_error_code": safe_error_code,
+        "validation_stage": validation_stage.value,
+        "http_status": http_status,
+        "parser_stage": parser_stage.value,
+        "transport_completed": transport_completed,
+        "candidates_found": candidates_found,
+        "schema_validation_started": schema_validation_started,
+    }
 
 
 class GeminiResponseParser:
@@ -49,12 +72,27 @@ class GeminiResponseParser:
         """Preserve the original direct strict-JSON parsing API."""
 
         try:
-            decoded = self._decode_structured_text(payload)
+            details = _diagnostic(
+                "direct_parse_invalid",
+                GeminiValidationStage.JSON_EXTRACTION,
+                GeminiParserStage.JSON_EXTRACTION,
+                transport_completed=False,
+            )
+            decoded = self._decode_structured_text(payload, details=details)
             return model_type.model_validate(decoded)
+        except ProviderValidationError:
+            raise
         except (ValueError, TypeError, PydanticValidationError) as error:
             raise ProviderValidationError(
                 "Gemini response failed JSON or typed validation.",
                 provider_name="gemini",
+                details=_diagnostic(
+                    "direct_parse_invalid",
+                    GeminiValidationStage.TYPED_SCHEMA,
+                    GeminiParserStage.TYPED_SCHEMA,
+                    transport_completed=False,
+                    schema_validation_started=True,
+                ),
                 retryable=False,
             ) from error
 
@@ -67,18 +105,53 @@ class GeminiResponseParser:
         prompt_metadata: dict[str, str | int],
     ) -> GeminiValidatedResponse:
         self._validate_http_status(response)
+        status = response.status_code
         if len(response.response_body) > self.maximum_response_characters:
             raise ProviderValidationError(
                 "Gemini response exceeded the parser size limit.",
                 provider_name="gemini",
+                details=_diagnostic(
+                    "response_too_large",
+                    GeminiValidationStage.RESPONSE_ENVELOPE,
+                    GeminiParserStage.ENVELOPE,
+                    http_status=status,
+                ),
                 retryable=False,
             )
-        envelope = self._decode_json_object(response.response_body, "envelope")
+        if not response.response_body.strip():
+            raise ProviderValidationError(
+                "Gemini response body was empty.",
+                provider_name="gemini",
+                details=_diagnostic(
+                    "empty_response",
+                    GeminiValidationStage.RESPONSE_ENVELOPE,
+                    GeminiParserStage.ENVELOPE,
+                    http_status=status,
+                ),
+                retryable=False,
+            )
+        envelope = self._decode_json_object(
+            response.response_body,
+            "envelope",
+            details=_diagnostic(
+                "invalid_envelope",
+                GeminiValidationStage.RESPONSE_ENVELOPE,
+                GeminiParserStage.ENVELOPE,
+                http_status=status,
+            ),
+        )
         prompt_feedback = envelope.get("promptFeedback")
         if isinstance(prompt_feedback, dict) and prompt_feedback.get("blockReason"):
             raise ProviderSafetyError(
                 "Gemini prompt was refused for safety.",
                 provider_name="gemini",
+                details=_diagnostic(
+                    "safety_rejected",
+                    GeminiValidationStage.SAFETY,
+                    GeminiParserStage.SAFETY,
+                    http_status=status,
+                    candidates_found=False,
+                ),
                 retryable=False,
             )
         candidates = envelope.get("candidates")
@@ -86,15 +159,41 @@ class GeminiResponseParser:
             raise ProviderValidationError(
                 "Gemini response did not contain a candidate.",
                 provider_name="gemini",
+                details=_diagnostic(
+                    "missing_candidates",
+                    GeminiValidationStage.CANDIDATE,
+                    GeminiParserStage.CANDIDATES,
+                    http_status=status,
+                    candidates_found=False,
+                ),
                 retryable=False,
             )
         candidate = candidates[0]
         if not isinstance(candidate, dict):
-            raise ProviderValidationError("Gemini candidate was malformed.")
+            raise ProviderValidationError(
+                "Gemini candidate was malformed.",
+                provider_name="gemini",
+                details=_diagnostic(
+                    "malformed_candidate",
+                    GeminiValidationStage.CANDIDATE,
+                    GeminiParserStage.CANDIDATES,
+                    http_status=status,
+                    candidates_found=True,
+                ),
+            )
         finish_reason = str(candidate.get("finishReason") or "")
         safety_metadata = {"ratings": candidate.get("safetyRatings", [])}
-        text = self._candidate_text(candidate)
-        structured = self._decode_structured_text(text)
+        text = self._candidate_text(candidate, http_status=status)
+        structured = self._decode_structured_text(
+            text,
+            details=_diagnostic(
+                "invalid_json",
+                GeminiValidationStage.JSON_EXTRACTION,
+                GeminiParserStage.JSON_EXTRACTION,
+                http_status=status,
+                candidates_found=True,
+            ),
+        )
         try:
             safety_result = self.safety_validator.inspect(
                 structured,
@@ -105,6 +204,13 @@ class GeminiResponseParser:
             raise ProviderSafetyError(
                 str(error),
                 provider_name="gemini",
+                details=_diagnostic(
+                    "safety_rejected",
+                    GeminiValidationStage.SAFETY,
+                    GeminiParserStage.SAFETY,
+                    http_status=status,
+                    candidates_found=True,
+                ),
                 retryable=False,
             ) from error
         try:
@@ -114,6 +220,14 @@ class GeminiResponseParser:
             raise ProviderValidationError(
                 "Gemini structured content failed the expected schema.",
                 provider_name="gemini",
+                details=_diagnostic(
+                    "typed_schema_invalid",
+                    GeminiValidationStage.TYPED_SCHEMA,
+                    GeminiParserStage.TYPED_SCHEMA,
+                    http_status=status,
+                    candidates_found=True,
+                    schema_validation_started=True,
+                ),
                 retryable=False,
             ) from error
         validation_warnings = self._warnings_for(capability)
@@ -162,73 +276,117 @@ class GeminiResponseParser:
         status = response.status_code
         if 200 <= status < 300:
             return
+        common = {
+            "validation_stage": GeminiValidationStage.HTTP_STATUS,
+            "parser_stage": GeminiParserStage.HTTP_STATUS,
+            "http_status": status,
+        }
         if status in {401, 403}:
             raise ProviderAuthenticationError(
                 "Gemini authentication was rejected; credentials were redacted.",
                 provider_name="gemini",
-                details={"safe_error_code": "authentication_rejected"},
+                details=_diagnostic("authentication_rejected", **common),
                 retryable=False,
             )
         if status == 429:
             raise ProviderRateLimitError(
                 "Gemini request was rate limited.",
                 provider_name="gemini",
-                details={"safe_error_code": "rate_limited"},
+                details=_diagnostic("rate_limited", **common),
                 retryable=True,
             )
         if status == 408:
             raise ProviderTimeoutError(
                 "Gemini request timed out.",
                 provider_name="gemini",
+                details=_diagnostic("request_timeout", **common),
                 retryable=True,
             )
         if status == 404:
             raise ProviderUnavailableError(
                 "The configured Gemini model was unavailable.",
                 provider_name="gemini",
-                details={"safe_error_code": "model_unavailable"},
+                details=_diagnostic("model_unavailable", **common),
                 retryable=False,
             )
         if status >= 500:
             raise ProviderUnavailableError(
                 "Gemini reported a transient provider failure.",
                 provider_name="gemini",
-                details={"safe_error_code": "provider_failure"},
+                details=_diagnostic("provider_failure", **common),
                 retryable=True,
             )
         raise ProviderValidationError(
             "Gemini rejected the structured request.",
             provider_name="gemini",
-            details={"safe_error_code": "invalid_request"},
+            details=_diagnostic("invalid_request", **common),
             retryable=False,
         )
 
     @staticmethod
-    def _candidate_text(candidate: dict[str, Any]) -> str:
+    def _candidate_text(
+        candidate: dict[str, Any],
+        *,
+        http_status: int,
+    ) -> str:
         content = candidate.get("content")
         parts = content.get("parts") if isinstance(content, dict) else None
         if not isinstance(parts, list) or not parts:
-            raise ProviderValidationError("Gemini candidate content was empty.")
+            raise ProviderValidationError(
+                "Gemini candidate content was empty.",
+                provider_name="gemini",
+                details=_diagnostic(
+                    "empty_candidate",
+                    GeminiValidationStage.CANDIDATE,
+                    GeminiParserStage.CANDIDATES,
+                    http_status=http_status,
+                    candidates_found=True,
+                ),
+            )
         values = [part.get("text") for part in parts if isinstance(part, dict)]
         text = "".join(value for value in values if isinstance(value, str)).strip()
         if not text:
-            raise ProviderValidationError("Gemini candidate text was empty.")
+            raise ProviderValidationError(
+                "Gemini candidate text was empty.",
+                provider_name="gemini",
+                details=_diagnostic(
+                    "empty_candidate",
+                    GeminiValidationStage.CANDIDATE,
+                    GeminiParserStage.CANDIDATES,
+                    http_status=http_status,
+                    candidates_found=True,
+                ),
+            )
         return text
 
     @staticmethod
-    def _decode_json_object(payload: str, label: str) -> dict[str, Any]:
+    def _decode_json_object(
+        payload: str,
+        label: str,
+        *,
+        details: dict[str, object] | None = None,
+    ) -> dict[str, Any]:
         try:
             decoded = json.loads(payload)
         except (json.JSONDecodeError, TypeError) as error:
             raise ProviderValidationError(
-                f"Gemini {label} was not valid JSON.", retryable=False
+                f"Gemini {label} was not valid JSON.",
+                details=details,
+                retryable=False,
             ) from error
         if not isinstance(decoded, dict):
-            raise ProviderValidationError(f"Gemini {label} must be a JSON object.")
+            raise ProviderValidationError(
+                f"Gemini {label} must be a JSON object.", details=details
+            )
         return decoded
 
     @classmethod
-    def _decode_structured_text(cls, payload: str) -> dict[str, Any]:
+    def _decode_structured_text(
+        cls,
+        payload: str,
+        *,
+        details: dict[str, object] | None = None,
+    ) -> dict[str, Any]:
         cleaned = payload.strip()
         fenced = _FENCED_JSON.fullmatch(cleaned)
         if fenced:
@@ -237,9 +395,14 @@ class GeminiResponseParser:
             cleaned.startswith("{") and cleaned.endswith("}")
         ):
             raise ProviderValidationError(
-                "Gemini structured content contained unsupported surrounding text."
+                "Gemini structured content contained unsupported surrounding text.",
+                details=details,
             )
-        return cls._decode_json_object(cleaned, "structured content")
+        return cls._decode_json_object(
+            cleaned,
+            "structured content",
+            details=details,
+        )
 
     @staticmethod
     def _nonnegative_int(value: object) -> int:

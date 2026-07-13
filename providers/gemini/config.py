@@ -19,7 +19,7 @@ class GeminiConfig(AuraBaseModel):
 
     enabled: bool = False
     api_key: SecretStr | None = Field(default=None, exclude=True, repr=False)
-    model: str = Field(default="gemini-2.0-flash", pattern=r"^[A-Za-z0-9._-]+$")
+    model: str = Field(default="gemini-3.5-flash", pattern=r"^[A-Za-z0-9._-]+$")
     base_url: str = DEFAULT_GEMINI_BASE_URL
     timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     maximum_retries: int = Field(default=2, ge=0, le=5)
@@ -45,7 +45,9 @@ class GeminiConfig(AuraBaseModel):
         if parsed.scheme != "https" or parsed.hostname not in ALLOWED_GEMINI_HOSTS:
             raise ValueError("Gemini base_url must use the allowlisted HTTPS host.")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError("Gemini base_url cannot contain credentials or query data.")
+            raise ValueError(
+                "Gemini base_url cannot contain credentials or query data."
+            )
         if self.allow_live_requests and not self.enabled:
             raise ValueError("Live Gemini requests require enabled=True.")
         if self.allow_live_requests and not self.api_key_value:

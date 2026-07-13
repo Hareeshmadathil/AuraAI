@@ -7,9 +7,12 @@ if TYPE_CHECKING:
 
 from providers.gemini.config import GeminiConfig
 from providers.gemini.models import (
+    GeminiParserStage,
     GeminiRequest,
+    GeminiSafeDiagnostic,
     GeminiSafetyResult,
     GeminiTransportResponse,
+    GeminiValidationStage,
     GeminiValidatedResponse,
 )
 from providers.gemini.prompt_builder import GeminiPromptBuilder
@@ -24,7 +27,9 @@ from providers.gemini.transport import (
 
 __all__ = [
     "GeminiConfig",
+    "GeminiParserStage",
     "GeminiRequest",
+    "GeminiSafeDiagnostic",
     "GeminiPromptBuilder",
     "GeminiProvider",
     "GeminiResponseParser",
@@ -33,6 +38,7 @@ __all__ = [
     "GeminiSafetyResult",
     "GeminiTransport",
     "GeminiTransportResponse",
+    "GeminiValidationStage",
     "GeminiValidatedResponse",
     "HttpGeminiTransport",
     "MockGeminiTransport",

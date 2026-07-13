@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,6 +11,44 @@ from pydantic import Field, field_validator
 
 from core import AuraBaseModel, utc_now
 from providers.models import ProviderCapability, ProviderOutput, ProviderUsage
+
+
+class GeminiValidationStage(StrEnum):
+    """Safe high-level boundary reached before a Gemini failure."""
+
+    TRANSPORT = "transport"
+    HTTP_STATUS = "http_status"
+    RESPONSE_ENVELOPE = "response_envelope"
+    CANDIDATE = "candidate"
+    JSON_EXTRACTION = "json_extraction"
+    SAFETY = "safety"
+    TYPED_SCHEMA = "typed_schema"
+    ROUTER_VALIDATION = "router_validation"
+
+
+class GeminiParserStage(StrEnum):
+    """Content-free parser progress marker for safe diagnostics."""
+
+    NOT_STARTED = "not_started"
+    HTTP_STATUS = "http_status"
+    ENVELOPE = "envelope"
+    CANDIDATES = "candidates"
+    JSON_EXTRACTION = "json_extraction"
+    SAFETY = "safety"
+    TYPED_SCHEMA = "typed_schema"
+    COMPLETE = "complete"
+
+
+class GeminiSafeDiagnostic(AuraBaseModel):
+    """Bounded diagnostics that cannot contain request or response content."""
+
+    safe_error_code: str = Field(min_length=1, max_length=100)
+    validation_stage: GeminiValidationStage
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    parser_stage: GeminiParserStage = GeminiParserStage.NOT_STARTED
+    transport_completed: bool = False
+    candidates_found: bool | None = None
+    schema_validation_started: bool = False
 
 
 class GeminiRequest(AuraBaseModel):

@@ -10,7 +10,11 @@ from pydantic import Field
 
 from core import AuraBaseModel
 from providers.exceptions import ProviderValidationError
-from providers.gemini.models import GeminiSafetyResult
+from providers.gemini.models import (
+    GeminiParserStage,
+    GeminiSafetyResult,
+    GeminiValidationStage,
+)
 
 
 class GeminiSafetyMode(StrEnum):
@@ -54,6 +58,18 @@ _UNSAFE_RESPONSE_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
+def _safety_details() -> dict[str, object]:
+    return {
+        "safe_error_code": "safety_rejected",
+        "validation_stage": GeminiValidationStage.SAFETY.value,
+        "http_status": None,
+        "parser_stage": GeminiParserStage.SAFETY.value,
+        "transport_completed": True,
+        "candidates_found": True,
+        "schema_validation_started": False,
+    }
+
+
 class GeminiSafetyValidator:
     """Inspect structured provider data before AuraAI accepts it."""
 
@@ -64,13 +80,20 @@ class GeminiSafetyValidator:
         finish_reason: str | None,
         safety_metadata: dict[str, Any],
     ) -> GeminiSafetyResult:
-        if (finish_reason or "").upper() in {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"}:
-            raise ProviderValidationError("Gemini response was refused for safety.")
+        blocked_reasons = {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"}
+        if (finish_reason or "").upper() in blocked_reasons:
+            raise ProviderValidationError(
+                "Gemini response was refused for safety.",
+                provider_name="gemini",
+                details=_safety_details(),
+            )
         serialized = json.dumps(payload, sort_keys=True)
         for pattern in _UNSAFE_RESPONSE_PATTERNS:
             if pattern.search(serialized):
                 raise ProviderValidationError(
-                    "Gemini response failed content safety validation."
+                    "Gemini response failed content safety validation.",
+                    provider_name="gemini",
+                    details=_safety_details(),
                 )
         blocked = [
             item
@@ -78,5 +101,9 @@ class GeminiSafetyValidator:
             if item.get("blocked") is True
         ]
         if blocked:
-            raise ProviderValidationError("Gemini response contains blocked content.")
+            raise ProviderValidationError(
+                "Gemini response contains blocked content.",
+                provider_name="gemini",
+                details=_safety_details(),
+            )
         return GeminiSafetyResult(allowed=True)

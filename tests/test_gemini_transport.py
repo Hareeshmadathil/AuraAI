@@ -30,11 +30,14 @@ def test_http_transport_uses_injected_executor_and_safe_json() -> None:
     observed: dict[str, object] = {}
 
     def executor(request, timeout, maximum):
+        payload = json.loads(request.data)
         observed.update(
             url=request.full_url,
             timeout=timeout,
             maximum=maximum,
             content_type=request.headers["Content-type"],
+            api_key=request.headers["X-goog-api-key"],
+            payload=payload,
         )
         return HttpExecutionResult(200, b'{"candidates":[]}', {})
 
@@ -47,6 +50,14 @@ def test_http_transport_uses_injected_executor_and_safe_json() -> None:
     assert response.status_code == 200
     assert observed["timeout"] == 3
     assert observed["content_type"] == "application/json"
+    assert observed["api_key"] == "fake-transport-key"
+    assert observed["url"].endswith(
+        "/v1beta/models/gemini-3.5-flash:generateContent"
+    )
+    assert "?key=" not in str(observed["url"])
+    generation = observed["payload"]["generationConfig"]
+    assert generation["responseFormat"]["text"]["mimeType"] == "application/json"
+    assert "responseSchema" not in generation
 
 
 def test_transport_enforces_https_and_allowlisted_host() -> None:

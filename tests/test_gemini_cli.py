@@ -1,6 +1,7 @@
 """Safe Gemini CLI tests; every live-shaped call uses a mock transport."""
 
 from providers.gemini.provider import main
+from providers.gemini import GeminiTransportResponse
 from providers.gemini.transport import MockGeminiTransport
 from tests.gemini_helpers import response_for
 
@@ -57,3 +58,33 @@ def test_cli_mocked_live_failure_falls_back_and_is_redacted(capsys) -> None:
     assert "success=true" in output
     assert "fallback=true" in output
     assert secret not in output
+
+
+def test_cli_reports_only_safe_validation_diagnostics(capsys) -> None:
+    secret = "fake-cli-diagnostic-secret"
+
+    def reject(request):
+        return GeminiTransportResponse(
+            request_id=request.request_id,
+            status_code=400,
+            response_body='{"error":{"message":"raw private response"}}',
+            latency_ms=1,
+        )
+
+    result = main(
+        ["--smoke-test", "--enable-live", "--founder-approved"],
+        transport=MockGeminiTransport(reject),
+        secret_reader=lambda _: secret,
+    )
+    output = capsys.readouterr().out
+
+    assert result == 0
+    assert "safe_error_code=invalid_request" in output
+    assert "validation_stage=http_status" in output
+    assert "http_status=400" in output
+    assert "parser_stage=http_status" in output
+    assert "transport_completed=true" in output
+    assert "candidates_found=unknown" in output
+    assert "schema_validation_started=false" in output
+    assert secret not in output
+    assert "raw private response" not in output
