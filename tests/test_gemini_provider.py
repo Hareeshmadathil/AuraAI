@@ -10,6 +10,7 @@ from providers import (
 from providers.exceptions import ProviderTimeoutError
 from providers.gemini import (
     GeminiConfig,
+    GeminiPromptBuilder,
     GeminiProvider,
     GeminiTransportResponse,
     MockGeminiTransport,
@@ -79,6 +80,58 @@ def test_configured_router_selects_gemini_and_records_usage() -> None:
     assert gemini.request_count == 1
     assert gemini.success_count == 1
     assert gemini.input_tokens == 12
+
+
+def test_default_schema_supports_gemini_20_property_ordering() -> None:
+    transport = MockGeminiTransport(lambda request: response_for(request))
+    provider = GeminiProvider(live_config(), transport)
+
+    result = provider.generate(
+        ProviderCapability.RESEARCH,
+        prompt_for(ProviderCapability.RESEARCH),
+    )
+
+    assert result.provider == "gemini"
+    assert transport.requests[0].response_schema["propertyOrdering"] == [
+        "findings",
+        "source_guidance",
+    ]
+
+
+def test_legacy_unordered_schema_reproduces_validation_fallback() -> None:
+    class LegacyUnorderedPromptBuilder(GeminiPromptBuilder):
+        @classmethod
+        def _response_schema(cls, schema):
+            return schema
+
+    def reject_unordered_schema(request):
+        if "propertyOrdering" not in request.response_schema:
+            return GeminiTransportResponse(
+                request_id=request.request_id,
+                status_code=400,
+                response_body='{"error":{"message":"mock ordering rejection"}}',
+                latency_ms=1,
+            )
+        return response_for(request)
+
+    transport = MockGeminiTransport(reject_unordered_schema)
+    provider = GeminiProvider(
+        live_config(),
+        transport,
+        prompt_builder=LegacyUnorderedPromptBuilder(),
+    )
+    router = create_provider_router(live_config(), transport)
+    router.registry.register_provider(provider, replace=True)
+
+    result = router.route(
+        ProviderCapability.RESEARCH,
+        prompt_for(ProviderCapability.RESEARCH),
+    )
+
+    assert result.provider == "deterministic"
+    assert result.fallback_used is True
+    health = next(item for item in router.build_state().health if item.name == "gemini")
+    assert health.last_safe_error_code == "invalid_request"
 
 
 def test_timeout_and_invalid_response_fall_back_safely() -> None:

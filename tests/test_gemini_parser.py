@@ -106,6 +106,22 @@ def test_parser_reports_authentication_without_response_body() -> None:
     assert "fake-secret-body" not in str(raised.value)
 
 
+def test_parser_classifies_structured_request_rejection_before_json_parsing() -> None:
+    request = request_stub()
+    response = GeminiTransportResponse(
+        request_id=request.request_id,
+        status_code=400,
+        response_body='{"error":{"message":"mock schema rejection"}}',
+        latency_ms=1,
+    )
+
+    with pytest.raises(ProviderValidationError, match="structured request") as raised:
+        parse(response)
+
+    assert raised.value.details["safe_error_code"] == "invalid_request"
+    assert "mock schema rejection" not in str(raised.value)
+
+
 @pytest.mark.parametrize("status", [429, 500])
 def test_parser_marks_transient_http_failures_retryable(status: int) -> None:
     request = request_stub()
