@@ -17,6 +17,7 @@ from app.dashboard.models import (
     EmployeeStatusSummary,
     ExecutiveDecisionSummary,
     MissionStatusSummary,
+    MissionArtifactSummary,
     SystemHealthSummary,
     ProductionStatusSummary,
     RenderArtifactSummary,
@@ -33,6 +34,7 @@ from core.constants import (
 from core.decision import DecisionRecord
 from core.mission import MissionRecord
 from core.models import AgentIdentity, WorkflowRecord
+from mission_engine.models import Mission, MissionExecutionStatus
 from production.models import ProductionPackage
 from production.rendering.models import LocalRenderResult, RenderedArtifact
 from intelligence.models import IntelligencePackage
@@ -51,7 +53,7 @@ class DashboardService:
         mode: DashboardMode = DashboardMode.EMPTY,
         data_label: str | None = None,
         employees: Iterable[AgentIdentity | Any] = (),
-        missions: Iterable[MissionRecord] = (),
+        missions: Iterable[MissionRecord | Mission | MissionStatusSummary] = (),
         decisions: Iterable[DecisionRecord] = (),
         workflows: Iterable[WorkflowRecord | Any] = (),
         system_health: SystemHealthSummary | None = None,
@@ -302,11 +304,47 @@ class DashboardService:
         return [employee for employee in employees if employee.group == group]
 
     @staticmethod
-    def _summarize_mission(mission: MissionRecord) -> MissionStatusSummary:
+    def _summarize_mission(
+        mission: MissionRecord | Mission | MissionStatusSummary,
+    ) -> MissionStatusSummary:
         """Convert a mission into dashboard-safe data."""
 
         if isinstance(mission, MissionStatusSummary):
             return mission
+        if isinstance(mission, Mission):
+            lead_department = (
+                mission.assigned_departments[0]
+                if mission.assigned_departments
+                else None
+            )
+            return MissionStatusSummary(
+                mission_id=mission.mission_id,
+                title=mission.title,
+                description=mission.objective,
+                objective=mission.objective,
+                capability=mission.capability.value,
+                status=mission.status,
+                priority=mission.priority,
+                lead_department=lead_department,
+                progress_percentage=mission.progress_percentage,
+                founder_approval_state=(
+                    mission.founder_approval_state.value
+                ),
+                assigned_departments=mission.assigned_departments,
+                assigned_employees=[
+                    employee.employee_name
+                    for employee in mission.assigned_employees
+                ],
+                generated_artifacts=[
+                    MissionArtifactSummary(
+                        artifact_id=artifact.artifact_id,
+                        artifact_type=artifact.artifact_type.value,
+                        name=artifact.name,
+                        summary=artifact.summary,
+                    )
+                    for artifact in mission.produced_artifacts
+                ],
+            )
         return MissionStatusSummary(
             mission_id=mission.mission_id,
             title=mission.title,
@@ -379,6 +417,11 @@ class DashboardService:
             MissionStatus.PLANNING,
             MissionStatus.ACTIVE,
             MissionStatus.PAUSED,
+            MissionExecutionStatus.PLANNING,
+            MissionExecutionStatus.RESEARCH,
+            MissionExecutionStatus.SEO,
+            MissionExecutionStatus.SCRIPT,
+            MissionExecutionStatus.FOUNDER_REVIEW,
         }
         return sum(mission.status in active_statuses for mission in missions)
 
@@ -401,7 +444,7 @@ class DashboardService:
                 occurred_at=mission.updated_at,
             )
             for mission in self._missions
-            if isinstance(mission, MissionRecord)
+            if isinstance(mission, (MissionRecord, Mission))
         )
         events.extend(
             ActivityEventSummary(

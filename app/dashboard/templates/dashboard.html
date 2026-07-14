@@ -35,9 +35,11 @@
         <div class="card-list">
             {% for mission in snapshot.missions %}
             <div class="list-card stacked">
-                <div><h3>{{ mission.title }}</h3><p>{{ mission.status.value | replace('_', ' ') | title }} &middot; {{ mission.lead_department.value | title if mission.lead_department else 'Unassigned' }}</p></div>
+                <div><p class="eyebrow">Mission {{ mission.mission_id }}</p><h3>{{ mission.title }}</h3><p>{{ mission.status.value | status_label }} &middot; {{ mission.lead_department.value | title if mission.lead_department else 'Unassigned' }}</p></div>
                 <div class="progress" aria-label="{{ mission.progress_percentage }} percent complete"><span style="width: {{ mission.progress_percentage }}%"></span></div>
                 <small>{{ mission.progress_percentage }}% complete</small>
+                {% if mission.assigned_employees %}<p><strong>Assigned employees:</strong> {{ mission.assigned_employees | join(', ') }}</p>{% endif %}
+                {% if mission.generated_artifacts %}<p><strong>Generated artifacts:</strong> {{ mission.generated_artifacts | map(attribute='name') | join(', ') }}</p>{% endif %}
             </div>
             {% else %}<p class="empty-state">No missions supplied. The command center is standing by.</p>{% endfor %}
         </div>

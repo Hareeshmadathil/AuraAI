@@ -23,6 +23,7 @@ from intelligence.models import IntelligencePackage
 from creative_quality.models import CreativeQualityPackage
 from analytics.models import AnalyticsReport, LearningReport
 from distribution.models import DistributionPackage
+from mission_engine.models import MissionExecutionStatus
 from providers.models import ProviderState
 
 
@@ -100,16 +101,33 @@ class EmployeeStatusSummary(AuraBaseModel):
     group: EmployeeGroup
 
 
+class MissionArtifactSummary(AuraBaseModel):
+    """Dashboard-safe metadata for one mission-produced artifact."""
+
+    artifact_id: UUID
+    artifact_type: str
+    name: str
+    summary: str = ""
+
+
 class MissionStatusSummary(AuraBaseModel):
     """Dashboard-safe mission lifecycle summary."""
 
     mission_id: UUID
     title: str
     description: str = ""
-    status: MissionStatus
+    status: MissionStatus | MissionExecutionStatus
     priority: TaskPriority
     lead_department: DepartmentName | None = None
     progress_percentage: float = Field(ge=0.0, le=100.0)
+    objective: str = ""
+    capability: str = ""
+    founder_approval_state: str = ""
+    assigned_departments: list[DepartmentName] = Field(default_factory=list)
+    assigned_employees: list[str] = Field(default_factory=list)
+    generated_artifacts: list[MissionArtifactSummary] = Field(
+        default_factory=list
+    )
 
 
 class WorkflowStatusSummary(AuraBaseModel):

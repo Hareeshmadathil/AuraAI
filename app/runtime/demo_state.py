@@ -22,8 +22,16 @@ from core.constants import (
     TaskPriority,
 )
 from core.decision import DecisionRecord
-from core.mission import MissionRecord
 from core.models import AuraBaseModel, WorkflowRecord
+from mission_engine import (
+    ArtifactRegistry,
+    InMemoryMissionRepository,
+    Mission,
+    MissionArtifactType,
+    MissionCapability,
+    MissionExecutionStatus,
+    MissionManager,
+)
 
 
 class DashboardWorkflowState(AuraBaseModel):
@@ -52,7 +60,7 @@ def create_demo_dashboard_service() -> DashboardService:
         )
         employee.set_status(status)
 
-    mission = _create_demo_mission()
+    mission = _create_demo_mission(roster.employees)
     decision = _create_demo_decision(roster.executives[0].agent_id)
     workflow = _create_demo_workflow()
 
@@ -75,36 +83,59 @@ def create_demo_dashboard_service() -> DashboardService:
     )
 
 
-def _create_demo_mission() -> MissionRecord:
-    """Create one active sample mission with measurable progress."""
+def _create_demo_mission(employees) -> Mission:
+    """Create one V1 mission with assignments and artifact metadata."""
 
-    mission = MissionRecord(
+    manager = MissionManager(
+        InMemoryMissionRepository(),
+        ArtifactRegistry(),
+    )
+    mission = manager.create_mission(
         title="Launch the AuraAI educational content pilot",
-        description=(
+        objective=(
             "Plan a safe, evidence-based local content campaign across "
             "the currently supported platforms."
         ),
+        capability=MissionCapability.CONTENT_PIPELINE,
         priority=TaskPriority.HIGH,
-        lead_department=DepartmentName.MARKETING,
-        requested_by="Local demonstration",
-        created_at=datetime(2026, 7, 12, 9, 0, tzinfo=UTC),
+        assigned_departments=[
+            DepartmentName.RESEARCH,
+            DepartmentName.MARKETING,
+        ],
     )
-    first = mission.add_objective(
-        description="Prepare an approved cross-platform plan.",
-        success_metric="One reviewed plan",
-        target_value="1 plan",
+    selected = {
+        employee.job_title: employee
+        for employee in employees
+        if employee.job_title in {"Research Director", "Trend Hunter"}
+    }
+    for employee in selected.values():
+        mission = manager.assign_employee(
+            mission.mission_id,
+            employee_id=employee.agent_id,
+            employee_name=employee.name,
+            department=employee.department,
+        )
+    for state in (
+        MissionExecutionStatus.PLANNING,
+        MissionExecutionStatus.RESEARCH,
+    ):
+        mission = manager.update_mission_state(mission.mission_id, state)
+    manager.register_artifact(
+        mission.mission_id,
+        artifact_type=MissionArtifactType.RESEARCH,
+        name="Educational pilot research brief",
+        summary="Deterministic sample research metadata.",
     )
-    mission.add_objective(
-        description="Prepare the first educational content brief.",
-        success_metric="One reviewed brief",
-        target_value="1 brief",
+    manager.register_artifact(
+        mission.mission_id,
+        artifact_type=MissionArtifactType.KEYWORDS,
+        name="Pilot keyword plan",
+        summary="Deterministic sample keyword metadata.",
     )
-    first.mark_achieved()
-    mission.approve("Sample executive approval for local demonstration.")
-    mission.begin_planning()
-    mission.activate()
-    mission.updated_at = datetime(2026, 7, 12, 10, 30, tzinfo=UTC)
-    return mission
+    return manager.update_mission_state(
+        mission.mission_id,
+        MissionExecutionStatus.SEO,
+    )
 
 
 def _create_demo_decision(executive_agent_id: UUID) -> DecisionRecord:
