@@ -7,7 +7,7 @@
     <header class="panel-header"><h2>{{ heading }}</h2><span>{{ group | length }}</span></header>
     <div class="card-list">
     {% for employee in group %}
-        <div class="list-card"><div class="avatar">{{ employee.name[0] }}</div><div><h3>{{ employee.name }}</h3><p>{{ employee.job_title }} &middot; {{ employee.department.value | title }}</p></div><span class="state">{{ employee.status.value | title }}</span></div>
+        <div class="list-card employee-card department-{{ employee.department.value }}"><div class="avatar" aria-hidden="true">{{ employee.name[0] }}</div><div><h3>{{ employee.name }}</h3><p>{{ employee.job_title }} &middot; <span class="department-badge">{{ employee.department.value | replace('_', ' ') | title }}</span></p></div><span class="state state-{{ employee.status.value }}"><span aria-hidden="true">●</span>{{ employee.status.value | status_label }}</span></div>
     {% else %}<p class="empty-state">No {{ heading | lower }} supplied.</p>{% endfor %}
     </div>
 </article>

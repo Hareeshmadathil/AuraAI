@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" role="img" aria-labelledby="title desc">
+  <title id="title">AuraAI Signal Core wordmark concept</title>
+  <desc id="desc">Signal Core symbol beside the AuraAI name.</desc>
+  <rect x="42" y="25" width="30" height="30" rx="9" fill="#f3f7ff"/><g fill="none" stroke="#62e6c5" stroke-width="6" stroke-linecap="round"><path d="M8 25h25l7 8M4 40h34M8 55h25l7-8M74 33l7-8h25M76 40h34M74 47l7 8h25"/></g>
+  <text x="130" y="53" fill="#f3f7ff" font-family="Segoe UI, system-ui, sans-serif" font-size="38" font-weight="700">Aura<tspan fill="#62e6c5">AI</tspan></text>
+</svg>

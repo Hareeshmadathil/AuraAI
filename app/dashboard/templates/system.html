@@ -3,7 +3,7 @@
 {% block content %}
 <section class="panel system-panel page-panel">
     <dl>
-        <div><dt>Overall status</dt><dd>{{ snapshot.system_health.status.value | title }}</dd></div>
+        <div><dt>Overall status</dt><dd>{{ snapshot.system_health.status.value | status_label }}</dd></div>
         <div><dt>Web service</dt><dd>{{ 'Operational' if snapshot.system_health.web_service_operational else 'Unavailable' }}</dd></div>
         <div><dt>Test status</dt><dd>{{ snapshot.system_health.test_status | replace('_', ' ') | title }}</dd></div>
         <div><dt>Runtime mode</dt><dd>{{ snapshot.mode.value | title }}</dd></div>

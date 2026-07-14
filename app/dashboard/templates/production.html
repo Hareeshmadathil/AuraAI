@@ -32,7 +32,7 @@
             <div><dt>Package</dt><dd>{{ production.package_id }}</dd></div>
             <div><dt>Current stage</dt><dd>{{ production.current_stage | replace('_', ' ') | title }}</dd></div>
             <div><dt>Selected style</dt><dd>{{ production.selected_style | replace('_', ' ') | title }}</dd></div>
-            <div><dt>Founder Approval</dt><dd>{{ production.founder_approval_status | replace('_', ' ') | title }}</dd></div>
+            <div><dt>Founder Approval</dt><dd>{{ production.founder_approval_status | status_label }}</dd></div>
             <div><dt>Assembly</dt><dd>{{ production.assembly_status | replace('_', ' ') | upper }}</dd></div>
             <div><dt>Subtitles</dt><dd>{{ production.subtitle_status }}</dd></div>
         </dl>

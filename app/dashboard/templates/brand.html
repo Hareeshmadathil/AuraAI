@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block heading %}AuraAI Brand System{% endblock %}
+{% block content %}
+<section class="brand-hero" aria-labelledby="brand-overview-title">
+    <div>
+        <p class="eyebrow">Corporate identity · Version 1</p>
+        <h2 id="brand-overview-title">An operating identity for an AI media company</h2>
+        <p>{{ brand_review.positioning }}</p>
+        <p>{{ brand_review.promise }}</p>
+    </div>
+    <aside class="alert-banner alert-warning" aria-label="Founder review status">
+        <strong>CONCEPT — FOUNDER REVIEW REQUIRED</strong>
+        <span>No logo has been approved. Legal and trademark screening is a separate future step.</span>
+    </aside>
+</section>
+
+<section class="section-block" aria-labelledby="concepts-title">
+    <header class="section-header">
+        <div><p class="eyebrow">Logo system</p><h2 id="concepts-title">Three concept families</h2></div>
+        <span class="status-badge status-waiting">● Founder review required</span>
+    </header>
+    <div class="concept-grid">
+        {% for concept in brand_review.logo_concepts %}
+        <article class="content-card concept-card">
+            <header>
+                <span class="concept-label">Concept {{ concept.concept_id | upper }}</span>
+                <h3>{{ concept.name }}</h3>
+                <p>{{ concept.direction }}</p>
+            </header>
+            <div class="concept-assets">
+                <img src="{{ concept.logo_path }}" alt="{{ concept.name }} logo concept">
+                <img src="{{ concept.wordmark_path }}" alt="{{ concept.name }} wordmark concept">
+                <img class="concept-icon" src="{{ concept.app_icon_path }}" alt="{{ concept.name }} app icon concept">
+            </div>
+            <p>{{ concept.rationale }}</p>
+            <dl class="review-notes">
+                <div><dt>Small size</dt><dd>{{ concept.small_size_behavior }}</dd></div>
+                <div><dt>Monochrome</dt><dd>{{ concept.monochrome_behavior }}</dd></div>
+                <div><dt>Dashboard</dt><dd>{{ concept.dashboard_suitability }}</dd></div>
+                <div><dt>Social avatar</dt><dd>{{ concept.social_avatar_suitability }}</dd></div>
+                <div><dt>Similarity risk</dt><dd>{{ concept.similarity_risk }}</dd></div>
+            </dl>
+            <p class="review-callout"><strong>Founder review:</strong> {{ concept.review_recommendation }}</p>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="brand-sample-grid" aria-label="Design system samples">
+    <article class="content-card">
+        <header class="section-header"><div><p class="eyebrow">Color</p><h2>Token palette</h2></div></header>
+        <div class="swatch-list">
+            {% for color in brand_review.palette %}
+            <div class="swatch-item"><span class="swatch swatch-{{ loop.index }}" aria-hidden="true"></span><div><strong>{{ color.name }}</strong><code>{{ color.token }}</code><p>{{ color.purpose }}</p></div></div>
+            {% endfor %}
+        </div>
+    </article>
+    <article class="content-card type-sample">
+        <p class="eyebrow">Typography</p>
+        <h2>Clear before clever</h2>
+        <p class="display-sample">Founder-controlled media operations.</p>
+        <p>System fonts keep the interface private, fast, and dependable.</p>
+        <code>MISSION · WORKFLOW · ARTIFACT · PROVIDER</code>
+    </article>
+</section>
+
+<section class="section-block" aria-labelledby="components-title">
+    <header class="section-header"><div><p class="eyebrow">UI language</p><h2 id="components-title">Operational components</h2></div></header>
+    <div class="component-showcase">
+        <article class="metric-card"><p>Active missions</p><strong>03</strong><span>Deterministic sample</span></article>
+        <article class="content-card">
+            <h3>Employee card</h3>
+            {% set employee = brand_review.employee_sample %}
+            <div class="list-card employee-card department-{{ employee.department }}"><div class="avatar" aria-hidden="true">{{ employee.initials }}</div><div><strong>{{ employee.name }}</strong><p>{{ employee.job_title }} · {{ employee.department | title }}</p></div><span class="state state-{{ employee.status }}"><span aria-hidden="true">●</span>{{ employee.status | status_label }}</span></div>
+        </article>
+        <article class="approval-panel">
+            <p class="eyebrow">Approval gate</p><h3>Founder Approval Required</h3>
+            <p>Review evidence and artifacts before any external action.</p>
+            <button class="button button-primary" type="button" disabled>Approval action preview</button>
+        </article>
+        <article class="content-card">
+            <h3>Status and department badges</h3>
+            <div class="tag-list"><span class="status-badge status-success">● Completed</span><span class="status-badge status-waiting">● Waiting</span><span class="status-badge status-danger">● Blocked</span><span class="department-badge department-intelligence">Intelligence</span></div>
+        </article>
+        <article class="content-card">
+            <h3>Form controls</h3>
+            <label for="sample-input">Campaign label</label><input id="sample-input" value="Review-only sample" readonly>
+            <label for="sample-select">Operating stage</label><select id="sample-select"><option>Founder review</option></select>
+        </article>
+        <article class="empty-state-panel"><svg aria-hidden="true"><use href="/static/brand/icons.svg#system"></use></svg><h3>No live data supplied</h3><p>Neutral empty states never invent performance.</p></article>
+    </div>
+</section>
+
+<p class="legal-note">{{ brand_review.legal_note }}</p>
+{% endblock %}

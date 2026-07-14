@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" role="img" aria-labelledby="title desc">
+  <title id="title">AuraAI Aura Orbit wordmark concept</title>
+  <desc id="desc">Aura Orbit symbol beside the AuraAI name in a system-safe wordmark.</desc>
+  <g transform="translate(4)"><path d="M18 54C0 33 20 12 54 13c31 1 54 17 50 35M108 25c16 23-8 42-42 42-29 0-51-13-52-31" fill="none" stroke="#62e6c5" stroke-width="6" stroke-linecap="round"/><circle cx="63" cy="40" r="10" fill="#f3f7ff"/></g>
+  <text x="130" y="53" fill="#f3f7ff" font-family="Segoe UI, system-ui, sans-serif" font-size="38" font-weight="700">Aura<tspan fill="#62e6c5">AI</tspan></text>
+</svg>

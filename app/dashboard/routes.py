@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.dashboard.brand_models import create_brand_review, status_label
 from app.dashboard.models import DashboardSnapshot
 from app.dashboard.service import DashboardService
 
@@ -31,6 +32,7 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
 
     router = APIRouter()
     templates = Jinja2Templates(directory=template_directory)
+    templates.env.filters["status_label"] = status_label
 
     def render(
         *,
@@ -83,6 +85,22 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             template_name="employees.html",
             page_title="Employees",
             active_path="/employees",
+        )
+
+    @router.get("/brand", response_class=HTMLResponse)
+    def brand_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render deterministic local brand concepts for founder review."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="brand.html",
+            page_title="Brand System",
+            active_path="/brand",
+            extra_context={"brand_review": create_brand_review()},
         )
 
     @router.get("/missions", response_class=HTMLResponse)

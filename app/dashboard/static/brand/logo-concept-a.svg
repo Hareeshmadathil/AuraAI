@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80" role="img" aria-labelledby="title desc">
+  <title id="title">Aura Orbit logo concept</title>
+  <desc id="desc">An asymmetric open orbital field around a stable circular core.</desc>
+  <g fill="none" stroke="#62e6c5" stroke-width="6" stroke-linecap="round">
+    <path d="M35 54C17 33 37 12 71 13c31 1 54 17 50 35"/>
+    <path d="M125 25c16 23-8 42-42 42-29 0-51-13-52-31"/>
+  </g>
+  <circle cx="80" cy="40" r="11" fill="#f3f7ff"/>
+</svg>

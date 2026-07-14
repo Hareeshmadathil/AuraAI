@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80" role="img" aria-labelledby="title desc">
+  <title id="title">A Monogram logo concept</title>
+  <desc id="desc">Connected operational paths form an abstract capital A.</desc>
+  <g fill="none" stroke="#62e6c5" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M43 66L76 14h9l33 52"/>
+    <path d="M58 51h44"/>
+    <path d="M80 14v37"/>
+  </g>
+</svg>

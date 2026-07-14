@@ -5,33 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="AuraAI local operating dashboard">
     <title>{{ page_title | default('Command Center') }} | AuraAI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/tokens.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/dashboard.css') }}">
 </head>
 <body>
     <a class="skip-link" href="#main-content">Skip to dashboard</a>
     <div class="app-shell">
         <aside class="sidebar" aria-label="Dashboard navigation">
-            <a class="brand" href="/">Aura<span>AI</span></a>
-            <nav>
-                {% for path, label in [
-                    ('/', 'Command Center'),
-                    ('/employees', 'Employees'),
-                    ('/missions', 'Missions'),
-                    ('/workflows', 'Workflows'),
-                    ('/decisions', 'Decisions'),
-                    ('/research', 'Research'),
-                    ('/intelligence', 'Intelligence'),
-                    ('/marketing', 'Marketing'),
-                    ('/production', 'Production'),
-                    ('/creative-quality', 'Creative Quality'),
-                    ('/distribution', 'Distribution'),
-                    ('/analytics', 'Analytics'),
-                    ('/learning', 'Learning'),
-                    ('/providers', 'AI Providers'),
-                    ('/renders', 'Renders'),
-                    ('/system', 'System')
+            <a class="brand" href="/" aria-label="AuraAI Command Center">
+                <svg class="brand-mark" aria-hidden="true"><use href="/static/brand/icons.svg#aura-mark"></use></svg>
+                <span class="brand-word">Aura<span>AI</span></span>
+            </a>
+            <nav aria-label="Primary navigation">
+                {% for path, label, icon in [
+                    ('/', 'Command Center', 'command-center'),
+                    ('/employees', 'Employees', 'employees'),
+                    ('/missions', 'Missions', 'missions'),
+                    ('/workflows', 'Workflows', 'workflows'),
+                    ('/decisions', 'Decisions', 'decisions'),
+                    ('/research', 'Research', 'research'),
+                    ('/intelligence', 'Intelligence', 'intelligence'),
+                    ('/marketing', 'Marketing', 'marketing'),
+                    ('/production', 'Production', 'production'),
+                    ('/creative-quality', 'Creative Quality', 'creative-quality'),
+                    ('/distribution', 'Distribution', 'distribution'),
+                    ('/analytics', 'Analytics', 'analytics'),
+                    ('/learning', 'Learning', 'learning'),
+                    ('/providers', 'AI Providers', 'providers'),
+                    ('/renders', 'Renders', 'renders'),
+                    ('/brand', 'Brand System', 'brand'),
+                    ('/system', 'System', 'system')
                 ] %}
-                <a href="{{ path }}" {% if active_path == path %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
+                <a href="{{ path }}" {% if active_path == path %}class="active" aria-current="page"{% endif %}>
+                    <svg aria-hidden="true"><use href="/static/brand/icons.svg#{{ icon }}"></use></svg>
+                    <span>{{ label }}</span>
+                </a>
                 {% endfor %}
             </nav>
             <p>Local interface only</p>
@@ -39,7 +47,7 @@
         <div class="content-shell">
             <header class="topbar">
                 <div>
-                    <p class="eyebrow">Autonomous Creator OS</p>
+                    <p class="eyebrow">Founder-controlled AI media OS</p>
                     <h1>{% block heading %}AuraAI Command Center{% endblock %}</h1>
                 </div>
                 <div class="header-badges">
@@ -48,7 +56,7 @@
                     {% endif %}
                     <div class="system-chip" aria-label="System status">
                         <span class="status-dot" aria-hidden="true"></span>
-                        {{ snapshot.system_health.status.value | title }}
+                        {{ snapshot.system_health.status.value | status_label }}
                     </div>
                 </div>
             </header>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80" role="img" aria-labelledby="title desc">
+  <title id="title">Signal Core logo concept</title>
+  <desc id="desc">A stable rounded core coordinates three offset directional rails.</desc>
+  <rect x="65" y="25" width="30" height="30" rx="9" fill="#f3f7ff"/>
+  <g fill="none" stroke="#62e6c5" stroke-width="6" stroke-linecap="round">
+    <path d="M28 25h27l8 8"/>
+    <path d="M22 40h34"/>
+    <path d="M28 55h27l8-8"/>
+    <path d="M97 33l8-8h27"/>
+    <path d="M104 40h34"/>
+    <path d="M97 47l8 8h27"/>
+  </g>
+</svg>

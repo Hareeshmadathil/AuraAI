@@ -1,0 +1,107 @@
+:root {
+    color-scheme: dark;
+
+    /* Core color system */
+    --color-bg-canvas: #070b14;
+    --color-bg-sidebar: #090e19;
+    --color-surface-1: #101725;
+    --color-surface-2: #151f31;
+    --color-surface-3: #1b2940;
+    --color-surface-translucent: rgba(10, 17, 29, 0.88);
+    --color-border-subtle: #27354c;
+    --color-border-strong: #3b4d68;
+    --color-text-primary: #f3f7ff;
+    --color-text-secondary: #a8b6cc;
+    --color-text-inverse: #03120e;
+    --color-brand-primary: #62e6c5;
+    --color-brand-secondary: #83adff;
+    --color-founder-action: #f4c875;
+    --color-danger: #ff96a3;
+    --color-info: #7ee7ff;
+
+    /* Status colors remain distinct from departments. */
+    --status-success: #72e6ae;
+    --status-warning: #f4c875;
+    --status-danger: #ff96a3;
+    --status-info: #83adff;
+    --status-idle: #a8b6cc;
+    --status-working: #62e6c5;
+    --status-blocked: #ff96a3;
+    --status-waiting: #f4c875;
+    --status-completed: #72e6ae;
+
+    /* Department accents */
+    --department-executive: #f4c875;
+    --department-strategy: #a9a3ff;
+    --department-research: #83adff;
+    --department-intelligence: #7ee7ff;
+    --department-marketing: #d99cff;
+    --department-production: #ffae86;
+    --department-creative-quality: #ff96b8;
+    --department-distribution: #78d9b1;
+    --department-analytics: #8fc7ff;
+    --department-system: #a8b6cc;
+
+    /* Data visualization */
+    --data-1: #62e6c5;
+    --data-2: #83adff;
+    --data-3: #f4c875;
+    --data-4: #d99cff;
+    --data-5: #ffae86;
+    --data-6: #78d9b1;
+
+    /* Typography */
+    --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.4rem;
+    --font-size-2xl: clamp(1.85rem, 4vw, 3rem);
+    --font-size-kpi: clamp(1.8rem, 3vw, 2.35rem);
+    --line-height-tight: 1.2;
+    --line-height-body: 1.6;
+    --line-height-relaxed: 1.75;
+
+    /* Spacing and shape */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+    --radius-sm: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.25rem;
+    --radius-pill: 999px;
+
+    /* Effects, motion, and layout */
+    --shadow-card: 0 1rem 3rem rgba(0, 0, 0, 0.2);
+    --shadow-focus: 0 0 0 3px rgba(98, 230, 197, 0.32);
+    --focus-ring: 2px solid var(--color-brand-primary);
+    --transition-fast: 120ms ease;
+    --transition-standard: 200ms ease;
+    --z-sidebar: 20;
+    --z-skip-link: 100;
+    --layout-content-max: 74rem;
+    --layout-reading-max: 68ch;
+    --sidebar-width: 15rem;
+    --control-min-height: 2.75rem;
+
+    /* Compatibility aliases for existing dashboard components. */
+    --background: var(--color-bg-canvas);
+    --surface: var(--color-surface-1);
+    --surface-raised: var(--color-surface-2);
+    --border: var(--color-border-subtle);
+    --text: var(--color-text-primary);
+    --muted: var(--color-text-secondary);
+    --accent: var(--color-brand-primary);
+    --accent-blue: var(--color-brand-secondary);
+    --warning: var(--status-warning);
+}

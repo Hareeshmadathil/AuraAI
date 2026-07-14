@@ -5,7 +5,7 @@
 {% if package %}
 <section class="panel page-panel">
     <p class="eyebrow">Founder-controlled local preparation</p>
-    <h2>{{ package.publication_status.value | replace('_', ' ') | title }}</h2>
+    <h2>{{ package.publication_status.value | status_label }}</h2>
     <p>AuraAI prepared metadata and instructions only. Automatic publishing is disabled.</p>
     <p><strong>Source:</strong> {{ package.source_kind }} &middot; <strong>Automatic publishing:</strong> No</p>
 </section>

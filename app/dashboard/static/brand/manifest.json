@@ -1,0 +1,15 @@
+{
+  "brand": "AuraAI",
+  "version": "1.0.0",
+  "assets": [
+    {"asset_id":"logo-a","concept_family":"aura-orbit","asset_type":"logo","path":"logo-concept-a.svg","mode":"dark","intended_use":"dashboard and documents","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"Aura Orbit logo concept","notes":"Founder and legal review required."},
+    {"asset_id":"wordmark-a","concept_family":"aura-orbit","asset_type":"wordmark","path":"wordmark-concept-a.svg","mode":"dark","intended_use":"wide headers","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"AuraAI Aura Orbit wordmark concept","notes":"Founder and legal review required."},
+    {"asset_id":"app-icon-a","concept_family":"aura-orbit","asset_type":"app_icon","path":"app-icon-concept-a.svg","mode":"dark","intended_use":"app icon and avatar","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"Aura Orbit app icon concept","notes":"Founder and legal review required."},
+    {"asset_id":"logo-b","concept_family":"a-monogram","asset_type":"logo","path":"logo-concept-b.svg","mode":"dark","intended_use":"dashboard and documents","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"A Monogram logo concept","notes":"Founder and legal review required."},
+    {"asset_id":"wordmark-b","concept_family":"a-monogram","asset_type":"wordmark","path":"wordmark-concept-b.svg","mode":"dark","intended_use":"wide headers","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"AuraAI A Monogram wordmark concept","notes":"Founder and legal review required."},
+    {"asset_id":"app-icon-b","concept_family":"a-monogram","asset_type":"app_icon","path":"app-icon-concept-b.svg","mode":"dark","intended_use":"app icon and avatar","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"A Monogram app icon concept","notes":"Founder and legal review required."},
+    {"asset_id":"logo-c","concept_family":"signal-core","asset_type":"logo","path":"logo-concept-c.svg","mode":"dark","intended_use":"dashboard and documents","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"Signal Core logo concept","notes":"Founder and legal review required."},
+    {"asset_id":"wordmark-c","concept_family":"signal-core","asset_type":"wordmark","path":"wordmark-concept-c.svg","mode":"dark","intended_use":"wide headers","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"AuraAI Signal Core wordmark concept","notes":"Founder and legal review required."},
+    {"asset_id":"app-icon-c","concept_family":"signal-core","asset_type":"app_icon","path":"app-icon-concept-c.svg","mode":"dark","intended_use":"app icon and avatar","status":"concept","review_required":true,"version":"1.0.0","accessibility_label":"Signal Core app icon concept","notes":"Founder and legal review required."}
+  ]
+}

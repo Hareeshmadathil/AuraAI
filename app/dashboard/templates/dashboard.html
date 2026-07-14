@@ -23,7 +23,7 @@
             <div class="list-card">
                 <div class="avatar" aria-hidden="true">{{ employee.name[0] }}</div>
                 <div><h3>{{ employee.name }}</h3><p>{{ employee.job_title }} &middot; {{ employee.department.value | title }}</p></div>
-                <span class="state state-{{ employee.status.value }}">{{ employee.status.value | replace('_', ' ') | title }}</span>
+                <span class="state state-{{ employee.status.value }}"><span aria-hidden="true">●</span>{{ employee.status.value | status_label }}</span>
             </div>
             {% else %}<p class="empty-state">No {{ heading | lower }} supplied.</p>{% endfor %}
         </div>
@@ -48,7 +48,7 @@
         <div class="card-list">
             {% for workflow in snapshot.workflows %}
             <div class="list-card stacked">
-                <div><h3>{{ workflow.name }}</h3><p>{{ workflow.status.value | title }} &middot; {{ workflow.task_count }} tasks</p></div>
+                <div><h3>{{ workflow.name }}</h3><p>{{ workflow.status.value | status_label }} &middot; {{ workflow.task_count }} tasks</p></div>
                 <div class="progress" aria-label="{{ workflow.progress_percentage }} percent complete"><span style="width: {{ workflow.progress_percentage }}%"></span></div>
                 <small>{{ workflow.progress_percentage }}% complete</small>
             </div>
@@ -61,7 +61,7 @@
         <div class="decision-table" role="region" aria-label="Recent executive decisions" tabindex="0">
             <table><thead><tr><th>Decision</th><th>Owner</th><th>Type</th><th>Outcome</th></tr></thead><tbody>
             {% for decision in snapshot.recent_decisions %}
-            <tr><td>{{ decision.title }}</td><td>{{ decision.decision_maker_name }}</td><td>{{ decision.decision_type.value | title }}</td><td><span class="state">{{ decision.outcome.value | replace('_', ' ') | title }}</span></td></tr>
+            <tr><td>{{ decision.title }}</td><td>{{ decision.decision_maker_name }}</td><td>{{ decision.decision_type.value | title }}</td><td><span class="state"><span aria-hidden="true">●</span>{{ decision.outcome.value | status_label }}</span></td></tr>
             {% else %}<tr><td colspan="4" class="empty-state">No executive decisions have been supplied.</td></tr>{% endfor %}
             </tbody></table>
         </div>

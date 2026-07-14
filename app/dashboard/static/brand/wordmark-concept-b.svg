@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" role="img" aria-labelledby="title desc">
+  <title id="title">AuraAI A Monogram wordmark concept</title>
+  <desc id="desc">Operational A monogram beside the AuraAI name.</desc>
+  <g fill="none" stroke="#62e6c5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 66L51 14h9l33 52"/><path d="M33 51h44"/><path d="M55 14v37"/></g>
+  <text x="116" y="53" fill="#f3f7ff" font-family="Segoe UI, system-ui, sans-serif" font-size="38" font-weight="700">Aura<tspan fill="#62e6c5">AI</tspan></text>
+</svg>
