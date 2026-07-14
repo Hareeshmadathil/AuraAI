@@ -46,6 +46,13 @@ class MissionArtifactType(StrEnum):
     APPROVAL_NOTES = "approval_notes"
 
 
+class MissionArtifactStatus(StrEnum):
+    """Lifecycle status for immutable mission artifact versions."""
+
+    CURRENT = "current"
+    SUPERSEDED = "superseded"
+
+
 class MissionAssignee(AuraBaseModel):
     """One employee explicitly assigned to a mission."""
 
@@ -64,6 +71,17 @@ class MissionArtifact(AuraBaseModel):
     name: str = Field(min_length=1, max_length=250)
     summary: str = Field(default="", max_length=2000)
     produced_by_employee_id: UUID | None = None
+    producer: str = Field(default="AuraAI", min_length=1, max_length=150)
+    stage: MissionExecutionStatus | None = None
+    version_number: int = Field(default=1, ge=1)
+    parent_artifact_id: UUID | None = None
+    content_hash: str = Field(
+        default="0" * 64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    status: MissionArtifactStatus = MissionArtifactStatus.CURRENT
+    founder_review_required: bool = True
+    metadata_reference: str | None = Field(default=None, max_length=500)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -75,6 +93,8 @@ class MissionHistoryEntry(AuraBaseModel):
     from_status: MissionExecutionStatus | None = None
     to_status: MissionExecutionStatus
     note: str = Field(default="", max_length=2000)
+    action: str = Field(default="state_transition", max_length=100)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     occurred_at: datetime = Field(default_factory=utc_now)
 
 

@@ -37,6 +37,12 @@ from company_missions.content_quality_review import (
 from company_missions.distribution_analytics import (
     create_distribution_demo_dashboard_service,
 )
+from company_missions.real_content_pilot import (
+    RealContentPilot,
+    RealContentPilotInput,
+    RealContentPilotResult,
+    create_real_content_pilot_demo_dashboard_service,
+)
 
 __all__ = [
     "NicheCandidateInput",
@@ -60,4 +66,8 @@ __all__ = [
     "create_creative_quality_demo_dashboard_service",
     "create_quality_render_demo_dashboard_service",
     "create_distribution_demo_dashboard_service",
+    "RealContentPilot",
+    "RealContentPilotInput",
+    "RealContentPilotResult",
+    "create_real_content_pilot_demo_dashboard_service",
 ]

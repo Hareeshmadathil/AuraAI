@@ -272,3 +272,4 @@ class DashboardSnapshot(AuraBaseModel):
     analytics: AnalyticsReport | None = None
     learning: LearningReport | None = None
     providers: ProviderState = Field(default_factory=ProviderState)
+    real_content_pilot: dict[str, Any] | None = None

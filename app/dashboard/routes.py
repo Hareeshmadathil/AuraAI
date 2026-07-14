@@ -286,6 +286,21 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             active_path="/providers",
         )
 
+    @router.get("/mission-pilot", response_class=HTMLResponse)
+    def mission_pilot_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render the safe Real Content Pilot founder-review package."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="mission_pilot.html",
+            page_title="Mission Pilot",
+            active_path="/mission-pilot",
+        )
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,

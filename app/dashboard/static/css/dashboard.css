@@ -335,6 +335,15 @@ code { font-family: var(--font-mono); font-size: 0.9em; color: var(--color-info)
 .empty-state-panel svg { width: 2rem; height: 2rem; margin-bottom: var(--space-2); }
 .legal-note { max-width: var(--layout-reading-max); margin: var(--space-8) 0; color: var(--muted); font-size: var(--font-size-sm); }
 
+/* Real Content Pilot */
+.pilot-safety-labels { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0; }
+.pilot-safety-labels strong { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-founder-action); border-radius: var(--radius-sm); color: var(--color-founder-action); font-size: var(--font-size-xs); letter-spacing: 0.06em; }
+.pilot-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.compact-value { overflow-wrap: anywhere; font-size: var(--font-size-sm) !important; }
+.clean-list, .timeline-list { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding-left: var(--space-5); }
+.timeline-list li { display: grid; gap: var(--space-1); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.timeline-list span, .timeline-list small { color: var(--muted); }
+
 @media (max-width: 800px) {
     .sidebar { position: static; width: auto; height: auto; overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); }
     .sidebar nav { grid-template-columns: repeat(4, minmax(0, 1fr)); flex: none; overflow: visible; margin-top: 1rem; padding: 0; scrollbar-gutter: auto; }
@@ -347,6 +356,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; color: var(--color-info)
     .brand-hero, .brand-sample-grid { grid-template-columns: 1fr; }
     .concept-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .component-showcase { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pilot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 520px) {
@@ -362,6 +372,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; color: var(--color-info)
     .concept-assets { grid-template-columns: 1fr 2fr 3rem; }
     .section-header { align-items: flex-start; flex-direction: column; }
     .review-notes div { grid-template-columns: 1fr; gap: var(--space-1); }
+    .pilot-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

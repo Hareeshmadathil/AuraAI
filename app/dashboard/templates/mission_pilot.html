@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block heading %}Real Content Mission Pilot{% endblock %}
+{% block content %}
+{% set pilot = snapshot.real_content_pilot %}
+{% if pilot %}
+<section class="panel page-panel" aria-labelledby="pilot-heading">
+    <div class="section-heading"><div><p class="eyebrow">Founder-controlled execution</p><h2 id="pilot-heading">{{ pilot.mission.title }}</h2></div><span class="state state-{{ pilot.mission.status }}">{{ pilot.mission.status | status_label }}</span></div>
+    <p>{{ pilot.mission.objective }}</p>
+    <div class="pilot-safety-labels" aria-label="Pilot safety status"><strong>NOT RENDERED</strong><strong>NOT PUBLISHED</strong><strong>FOUNDER REVIEW REQUIRED</strong></div>
+    <div class="metric-grid pilot-grid">
+        <article class="metric-card"><span>Mission ID</span><strong class="compact-value">{{ pilot.mission.mission_id }}</strong></article>
+        <article class="metric-card"><span>Progress</span><strong>{{ pilot.mission.progress_percentage }}%</strong></article>
+        <article class="metric-card"><span>Artifacts</span><strong>{{ pilot.mission.produced_artifacts | length }}</strong></article>
+        <article class="metric-card"><span>Founder review</span><strong class="compact-value">{{ pilot.founder_review_artifact.review_status | status_label }}</strong></article>
+    </div>
+</section>
+<section class="dashboard-grid two-column">
+    <article class="panel"><p class="eyebrow">Research artifact</p><h2>{{ pilot.research_artifact.topic }}</h2><p>{{ pilot.research_artifact.executive_summary }}</p><p><strong>Provider:</strong> {{ pilot.research_artifact.provider_used }} · fallback={{ pilot.research_artifact.fallback_used | lower }}</p><p><strong>Limitations:</strong> {{ pilot.research_artifact.limitations | join(' ') }}</p></article>
+    <article class="panel"><p class="eyebrow">SEO artifact</p><h2>{{ pilot.seo_artifact.primary_keyword }}</h2><p><strong>Intent:</strong> {{ pilot.seo_artifact.search_intent }}</p><p><strong>Secondary:</strong> {{ pilot.seo_artifact.secondary_keywords | join(', ') }}</p><p><strong>Provider:</strong> {{ pilot.seo_artifact.provider_used }} · fallback={{ pilot.seo_artifact.fallback_used | lower }}</p></article>
+    <article class="panel"><p class="eyebrow">Script artifact v{{ pilot.script_artifact.version_number }}</p><h2>{{ pilot.script_artifact.title }}</h2><p>{{ pilot.script_artifact.hook }}</p><p>{{ pilot.script_artifact.sections | length }} sections · {{ pilot.script_artifact.word_count }} words · {{ pilot.script_artifact.estimated_duration_seconds }} seconds</p></article>
+    <article class="panel"><p class="eyebrow">Creative Quality</p><h2>{{ pilot.quality_artifact.overall_score }} / 100</h2><p><strong>Gate:</strong> {{ pilot.quality_artifact.gate_status | status_label }}</p><p><strong>Revision count:</strong> {{ pilot.quality_artifact.revision_count }}</p><p><strong>Blocking issues:</strong> {{ pilot.quality_artifact.blocking_issues | join('; ') if pilot.quality_artifact.blocking_issues else 'None' }}</p></article>
+</section>
+<section class="dashboard-grid two-column">
+    <article class="panel"><p class="eyebrow">Assigned employees</p><ul class="clean-list">{% for employee in pilot.mission.assigned_employees %}<li>{{ employee.employee_name }} · {{ employee.department | status_label }}</li>{% endfor %}</ul></article>
+    <article class="panel"><p class="eyebrow">Artifact versions</p><ul class="clean-list">{% for artifact in pilot.mission.produced_artifacts %}<li>{{ artifact.name }} v{{ artifact.version_number }} · {{ artifact.status | status_label }}</li>{% endfor %}</ul></article>
+</section>
+<section class="panel page-panel"><p class="eyebrow">Mission timeline</p><ol class="timeline-list">{% for entry in pilot.mission.history %}<li><strong>{{ entry.action | replace('_', ' ') | title }}</strong><span>{{ entry.note }}</span><small>{{ entry.occurred_at }}</small></li>{% endfor %}</ol></section>
+{% else %}
+<section class="panel page-panel"><p class="empty-state">No Real Content Pilot was supplied. No live provider request was attempted.</p></section>
+{% endif %}
+{% endblock %}

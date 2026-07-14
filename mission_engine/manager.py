@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
@@ -14,6 +16,7 @@ from mission_engine.models import (
     Mission,
     MissionArtifact,
     MissionArtifactType,
+    MissionArtifactStatus,
     MissionAssignee,
     MissionCapability,
     MissionExecutionStatus,
@@ -32,10 +35,12 @@ class MissionManager:
         artifact_registry: ArtifactRegistry,
         *,
         logger: logging.Logger | None = None,
+        audit_actions: bool = False,
     ) -> None:
         self._repository = repository
         self._artifact_registry = artifact_registry
         self._logger = logger or logging.getLogger(__name__)
+        self._audit_actions = audit_actions
 
     def create_mission(
         self,
@@ -144,6 +149,19 @@ class MissionManager:
                     department=department,
                 )
             )
+            if self._audit_actions:
+                mission.history.append(
+                    MissionHistoryEntry(
+                        from_status=mission.status,
+                        to_status=mission.status,
+                        action="employee_assigned",
+                        note=f"Employee assigned: {employee_name}.",
+                        metadata={
+                            "employee_id": str(employee_id),
+                            "department": department.value,
+                        },
+                    )
+                )
         if department not in mission.assigned_departments:
             mission.assigned_departments.append(department)
         mission.updated_at = utc_now()
@@ -159,6 +177,11 @@ class MissionManager:
         summary: str = "",
         produced_by_employee_id: UUID | None = None,
         metadata: Mapping[str, Any] | None = None,
+        producer: str = "AuraAI",
+        stage: MissionExecutionStatus | None = None,
+        parent_artifact_id: UUID | None = None,
+        founder_review_required: bool = True,
+        metadata_reference: str | None = None,
     ) -> MissionArtifact:
         """Register metadata and attach it to the owning mission."""
 
@@ -171,16 +194,62 @@ class MissionManager:
                 "Artifact producer must be assigned to the mission.",
                 error_code="MISSION_ARTIFACT_PRODUCER_NOT_ASSIGNED",
             )
+        existing = [
+            artifact
+            for artifact in mission.produced_artifacts
+            if artifact.artifact_type == artifact_type
+        ]
+        version_number = len(existing) + 1
+        content = {
+            "mission_id": str(mission_id),
+            "artifact_type": artifact_type.value,
+            "version_number": version_number,
+            "name": name,
+            "summary": summary,
+            "metadata": dict(metadata or {}),
+        }
+        content_hash = hashlib.sha256(
+            json.dumps(content, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
         artifact = MissionArtifact(
             mission_id=mission_id,
             artifact_type=artifact_type,
             name=name,
             summary=summary,
             produced_by_employee_id=produced_by_employee_id,
+            producer=producer,
+            stage=stage or mission.status,
+            version_number=version_number,
+            parent_artifact_id=parent_artifact_id,
+            content_hash=content_hash,
+            founder_review_required=founder_review_required,
+            metadata_reference=metadata_reference,
             metadata=dict(metadata or {}),
         )
         self._artifact_registry.register(artifact)
+        if existing:
+            prior = existing[-1]
+            for index, value in enumerate(mission.produced_artifacts):
+                if value.artifact_id == prior.artifact_id:
+                    mission.produced_artifacts[index] = value.model_copy(
+                        update={"status": MissionArtifactStatus.SUPERSEDED}
+                    )
+                    break
         mission.produced_artifacts.append(artifact)
+        if self._audit_actions:
+            mission.history.append(
+                MissionHistoryEntry(
+                    from_status=mission.status,
+                    to_status=mission.status,
+                    action="artifact_registered",
+                    note=f"Artifact registered: {name} v{version_number}.",
+                    metadata={
+                        "artifact_id": str(artifact.artifact_id),
+                        "artifact_type": artifact_type.value,
+                        "version_number": version_number,
+                    },
+                )
+            )
         mission.updated_at = utc_now()
         self.save_mission(mission)
         self._logger.info(
@@ -212,6 +281,15 @@ class MissionManager:
                 error_code="FOUNDER_APPROVAL_NOTES_REQUIRED",
             )
         mission.founder_approval_state = ApprovalStatus.APPROVED
+        if self._audit_actions:
+            mission.history.append(
+                MissionHistoryEntry(
+                    from_status=mission.status,
+                    to_status=mission.status,
+                    action="founder_approved",
+                    note="Founder approved the mission review package.",
+                )
+            )
         mission.updated_at = utc_now()
         self.save_mission(mission)
         self.register_artifact(

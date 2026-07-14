@@ -92,6 +92,22 @@ class RuntimeEventType(StrEnum):
     PROVIDER_FALLBACK = "provider_fallback"
     PROVIDER_FAILED = "provider_failed"
     PROVIDER_COMPLETED = "provider_completed"
+    REAL_MISSION_CREATED = "real_mission_created"
+    REAL_MISSION_PLANNED = "real_mission_planned"
+    RESEARCH_STAGE_STARTED = "research_stage_started"
+    RESEARCH_ARTIFACT_CREATED = "research_artifact_created"
+    SEO_STAGE_STARTED = "seo_stage_started"
+    SEO_ARTIFACT_CREATED = "seo_artifact_created"
+    SCRIPT_STAGE_STARTED = "script_stage_started"
+    SCRIPT_ARTIFACT_CREATED = "script_artifact_created"
+    CREATIVE_QUALITY_STAGE_STARTED = "creative_quality_stage_started"
+    CREATIVE_QUALITY_ARTIFACT_CREATED = "creative_quality_artifact_created"
+    FOUNDER_REVIEW_READY = "founder_review_ready"
+    FOUNDER_REVIEW_APPROVED = "founder_review_approved"
+    FOUNDER_REVIEW_REJECTED = "founder_review_rejected"
+    FOUNDER_REVISION_REQUESTED = "founder_revision_requested"
+    REAL_MISSION_COMPLETED = "real_mission_completed"
+    REAL_MISSION_FAILED = "real_mission_failed"
 
 
 class RuntimeEventSeverity(StrEnum):

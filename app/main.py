@@ -146,4 +146,14 @@ def create_distribution_demo_app() -> FastAPI:
     )
 
 
+def create_real_content_pilot_demo_app() -> FastAPI:
+    """Create the cumulative offline pilot at its founder-review gate."""
+
+    from company_missions import create_real_content_pilot_demo_dashboard_service
+
+    return create_app(
+        dashboard_service=create_real_content_pilot_demo_dashboard_service()
+    )
+
+
 app = create_app()

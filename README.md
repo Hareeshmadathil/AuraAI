@@ -112,6 +112,22 @@ A live smoke test requires both `--enable-live` and `--founder-approved`, then
 requests the key through hidden interactive input. Tests never perform live
 requests.
 
+## Real Mission Pilot v1
+
+The Real Mission Pilot connects the Mission Execution Engine to existing
+Research, SEO, Production script, Creative Quality, runtime-event, and dashboard
+boundaries. Its deterministic default produces typed versioned research, SEO,
+script, quality, and founder-review artifacts, then stops at `FOUNDER_REVIEW`.
+
+```text
+CREATED → PLANNING → RESEARCH → SEO → SCRIPT → FOUNDER_REVIEW
+```
+
+Completion requires an explicit founder decision. Quality blockers prevent
+approval. Optional live Gemini advice can only be composed with an injected
+provider router and a separate explicit founder approval; the demo factory
+never constructs a live client. This milestone does not render or publish.
+
 ## Local rendering
 
 The Production v2 pilot detects local FFmpeg, FFprobe, and Windows speech
@@ -191,11 +207,15 @@ python -m uvicorn app.main:create_creative_quality_demo_app --factory --reload
 python -m uvicorn app.main:create_local_render_demo_app --factory --reload
 python -m uvicorn app.main:create_quality_render_demo_app --factory --reload
 python -m uvicorn app.main:create_distribution_demo_app --factory --reload
+python -m uvicorn app.main:create_real_content_pilot_demo_app --factory --reload
 ```
 
 Open `http://127.0.0.1:8000`. Useful local pages include `/`, `/employees`,
 `/intelligence`, `/production`, `/creative-quality`, `/renders`,
 `/distribution`, `/analytics`, `/learning`, `/providers`, and `/brand`.
+The deterministic pilot review is available at `/mission-pilot`; its mission is
+also projected on `/missions` and its existing cumulative state remains visible
+on `/workflows`, `/decisions`, and `/creative-quality`.
 
 ## Testing
 
@@ -225,6 +245,8 @@ real environment secrets or external network access.
 - No database-backed dashboard state or authentication.
 - No guarantee that provider responses, quality scores, or research predict
   commercial performance.
+- Real Mission Pilot research uses supplied notes and provider synthesis only;
+  external evidence verification remains a founder responsibility.
 - Brand concepts have not received founder selection or trademark clearance.
 
 ## Roadmap
