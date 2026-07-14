@@ -156,4 +156,16 @@ def create_real_content_pilot_demo_app() -> FastAPI:
     )
 
 
+def create_first_content_mission_demo_app() -> FastAPI:
+    """Create the cumulative deterministic first-content review app."""
+
+    from company_missions.first_real_content.dashboard import (
+        create_first_content_mission_demo_dashboard_service,
+    )
+
+    return create_app(
+        dashboard_service=create_first_content_mission_demo_dashboard_service()
+    )
+
+
 app = create_app()

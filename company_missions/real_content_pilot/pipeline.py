@@ -275,6 +275,7 @@ class RealContentPilot:
         self.founder_review = FounderReviewService(
             self.mission_manager, self.event_bus
         )
+        self.last_result: RealContentPilotResult | None = None
 
     @property
     def employees(self) -> tuple[BaseEmployee, ...]:
@@ -352,7 +353,9 @@ class RealContentPilot:
                     artifact_id=str(script.artifact_id),
                 )
             )
-            quality = self._quality(mission, package, script)
+            quality, quality_package, revised_package, revised_script = self._quality(
+                mission, package, script
+            )
             partial["quality_artifact"] = quality.model_dump(mode="json")
             stages.append(
                 stage_result(
@@ -384,7 +387,11 @@ class RealContentPilot:
                 stage_results=stages,
                 runtime_snapshot=self._safe_runtime_snapshot(mission),
                 provider_usage_summary=usage,
+                production_package=revised_package or package,
+                creative_quality_package=quality_package,
+                script_versions=[script, *([revised_script] if revised_script else [])],
             )
+            self.last_result = result
             return OperationResult.ok(
                 "Real Content Pilot is ready for founder review.",
                 data={"real_content_pilot_result": result.model_dump(mode="json")},
@@ -633,7 +640,8 @@ class RealContentPilot:
                     "Do not guarantee outcomes or fabricate statistics.",
                 ],
                 preferred_call_to_action=(
-                    "Apply one low-risk step, verify the evidence, and record results."
+                    value.preferred_call_to_action
+                    or "Apply one low-risk step, verify the evidence, and record results."
                 ),
                 preferred_style=value.preferred_style,
                 requires_founder_approval=True,
@@ -698,7 +706,7 @@ class RealContentPilot:
 
     def _quality(
         self, mission: Mission, package: Any, script: ScriptArtifact
-    ) -> CreativeQualityArtifact:
+    ) -> tuple[CreativeQualityArtifact, Any, Any | None, ScriptArtifact | None]:
         self._emit(RuntimeEventType.CREATIVE_QUALITY_STAGE_STARTED, mission)
         operation = self.quality_pipeline.run(package)
         data = operation.data.get("creative_quality_pipeline_result")
@@ -727,6 +735,7 @@ class RealContentPilot:
             MissionArtifactType.QUALITY_REPORT,
             self.quality_pipeline.creative_director,
         )
+        revised_artifact = None
         if result.revised_production_package is not None:
             revised = result.revised_production_package.script
             revised_artifact = ScriptArtifact(
@@ -756,7 +765,12 @@ class RealContentPilot:
                 parent_artifact_id=script.artifact_id,
             )
         self._emit(RuntimeEventType.CREATIVE_QUALITY_ARTIFACT_CREATED, mission)
-        return artifact
+        return (
+            artifact,
+            quality,
+            result.revised_production_package,
+            revised_artifact,
+        )
 
     def _prepare_founder_review(
         self,

@@ -301,6 +301,21 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             active_path="/mission-pilot",
         )
 
+    @router.get("/first-content-mission", response_class=HTMLResponse)
+    def first_content_mission_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render the first complete founder content-review package."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="first_content_mission.html",
+            page_title="First Content Mission",
+            active_path="/first-content-mission",
+        )
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,

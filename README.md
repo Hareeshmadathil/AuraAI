@@ -128,6 +128,42 @@ approval. Optional live Gemini advice can only be composed with an injected
 provider router and a separate explicit founder approval; the demo factory
 never constructs a live client. This milestone does not render or publish.
 
+## First Real Content Mission v1
+
+The first-content mission composes the Mission Execution Engine and Real Content
+Pilot into a complete founder-review package: research, SEO, versioned script,
+production plans, Creative Quality results, thumbnails, short-form derivatives,
+metadata, evidence warnings, and a checksum manifest. The sample specification
+is `founder_inputs/first_content_mission.example.json`; it is sample data, not a
+selected flagship niche.
+
+Validate the input without executing or writing artifacts:
+
+```powershell
+python -m company_missions.first_real_content.cli --input founder_inputs/first_content_mission.example.json --output-root outputs/missions --dry-run
+```
+
+Run the deterministic mission and explicitly export beneath the ignored output
+root:
+
+```powershell
+python -m company_missions.first_real_content.cli --input founder_inputs/first_content_mission.example.json --output-root outputs/missions --execute
+```
+
+Live Gemini remains opt-in and requires both `--enable-live-gemini` and
+`--founder-approved-live-ai`, an interactive founder confirmation, and a hidden
+key prompt. The request budget defaults to six: at most one request for each
+supported research, SEO, script, hook, review, and metadata stage. Deterministic
+fallback remains available. Prompts, raw responses, credentials, and
+authorization data are not exported.
+
+The mission always stops at `FOUNDER_REVIEW`. Content approval does not approve
+rendering, uploading, or publishing. Review the local page with:
+
+```powershell
+python -m uvicorn app.main:create_first_content_mission_demo_app --factory --reload
+```
+
 ## Local rendering
 
 The Production v2 pilot detects local FFmpeg, FFprobe, and Windows speech
@@ -208,12 +244,14 @@ python -m uvicorn app.main:create_local_render_demo_app --factory --reload
 python -m uvicorn app.main:create_quality_render_demo_app --factory --reload
 python -m uvicorn app.main:create_distribution_demo_app --factory --reload
 python -m uvicorn app.main:create_real_content_pilot_demo_app --factory --reload
+python -m uvicorn app.main:create_first_content_mission_demo_app --factory --reload
 ```
 
 Open `http://127.0.0.1:8000`. Useful local pages include `/`, `/employees`,
 `/intelligence`, `/production`, `/creative-quality`, `/renders`,
 `/distribution`, `/analytics`, `/learning`, `/providers`, and `/brand`.
-The deterministic pilot review is available at `/mission-pilot`; its mission is
+The deterministic pilot review is available at `/mission-pilot`; the complete
+first-content review is at `/first-content-mission`. Its mission is
 also projected on `/missions` and its existing cumulative state remains visible
 on `/workflows`, `/decisions`, and `/creative-quality`.
 

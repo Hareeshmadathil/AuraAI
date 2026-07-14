@@ -108,6 +108,23 @@ class RuntimeEventType(StrEnum):
     FOUNDER_REVISION_REQUESTED = "founder_revision_requested"
     REAL_MISSION_COMPLETED = "real_mission_completed"
     REAL_MISSION_FAILED = "real_mission_failed"
+    FIRST_CONTENT_MISSION_STARTED = "first_content_mission_started"
+    FOUNDER_INPUT_VALIDATED = "founder_input_validated"
+    LIVE_AI_AUTHORIZED = "live_ai_authorized"
+    LIVE_AI_DISABLED = "live_ai_disabled"
+    RESEARCH_COMPLETED = "research_completed"
+    SEO_COMPLETED = "seo_completed"
+    SCRIPT_COMPLETED = "script_completed"
+    SCRIPT_REVISED = "script_revised"
+    QUALITY_REVIEW_COMPLETED = "quality_review_completed"
+    REVIEW_PACKAGE_CREATED = "review_package_created"
+    ARTIFACTS_EXPORTED = "artifacts_exported"
+    FOUNDER_CONTENT_REVIEW_REQUIRED = "founder_content_review_required"
+    FOUNDER_CONTENT_APPROVED = "founder_content_approved"
+    FOUNDER_CONTENT_REJECTED = "founder_content_rejected"
+    FOUNDER_CONTENT_REVISION_REQUESTED = "founder_content_revision_requested"
+    FIRST_CONTENT_MISSION_COMPLETED = "first_content_mission_completed"
+    FIRST_CONTENT_MISSION_FAILED = "first_content_mission_failed"
 
 
 class RuntimeEventSeverity(StrEnum):

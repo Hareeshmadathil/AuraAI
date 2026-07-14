@@ -10,6 +10,8 @@ from pydantic import Field, field_validator
 
 from core import AuraBaseModel, utc_now
 from mission_engine import Mission, MissionExecutionStatus
+from creative_quality.models import CreativeQualityPackage
+from production.models import ProductionPackage
 
 from company_missions.real_content_pilot.artifacts import (
     CreativeQualityArtifact,
@@ -60,6 +62,13 @@ class RealContentPilotResult(AuraBaseModel):
     stage_results: list[PilotStageResult] = Field(min_length=1)
     runtime_snapshot: dict[str, Any] | None = None
     provider_usage_summary: list[ProviderStageUsage] = Field(default_factory=list)
+    production_package: ProductionPackage | None = Field(default=None, exclude=True)
+    creative_quality_package: CreativeQualityPackage | None = Field(
+        default=None, exclude=True
+    )
+    script_versions: list[ScriptArtifact] = Field(
+        default_factory=list, exclude=True
+    )
     completed_at: datetime | None = None
 
     @field_validator("completed_at")

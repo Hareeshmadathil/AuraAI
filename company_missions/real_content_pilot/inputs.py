@@ -24,6 +24,7 @@ class RealContentPilotInput(AuraBaseModel):
     tone: str = Field(min_length=1, max_length=500)
     target_duration_seconds: int = Field(ge=60, le=1800)
     content_goal: str = Field(min_length=1, max_length=3000)
+    preferred_call_to_action: str | None = Field(default=None, max_length=1000)
     preferred_style: VideoStyle | None = None
     source_notes: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)

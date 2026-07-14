@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block heading %}First Content Mission{% endblock %}
+{% block content %}
+{% set item = snapshot.first_content_mission %}
+{% if item %}
+<section class="panel" aria-labelledby="mission-review-title">
+    <p class="eyebrow">FOUNDER REVIEW REQUIRED</p>
+    <h2 id="mission-review-title">{{ item.mission_summary.title }}</h2>
+    <p>{{ item.founder_review.mission_objective }}</p>
+    <dl class="detail-grid">
+        <div><dt>Mission ID</dt><dd>{{ item.mission_summary.mission_id }}</dd></div>
+        <div><dt>State</dt><dd>{{ item.mission_summary.current_state | status_label }}</dd></div>
+        <div><dt>Artifacts</dt><dd>{{ item.mission_summary.artifact_count }}</dd></div>
+        <div><dt>Progress</dt><dd>{{ item.mission_summary.progress_percentage }}%</dd></div>
+        <div><dt>Export</dt><dd>{{ item.export_status | status_label }}</dd></div>
+    </dl>
+</section>
+<section class="dashboard-grid">
+    <article class="panel">
+        <h2>Research &amp; evidence</h2>
+        <p>{{ item.founder_review.research_summary }}</p>
+        <ul>{% for warning in item.founder_review.evidence_limitations %}<li>{{ warning }}</li>{% endfor %}</ul>
+    </article>
+    <article class="panel">
+        <h2>SEO &amp; metadata</h2>
+        <p>Primary keyword: {{ item.founder_review.primary_keyword }}</p>
+        <p>Recommended title: {{ item.founder_review.recommended_title }}</p>
+        <ul>{% for title in item.founder_review.title_options %}<li>{{ title }}</li>{% endfor %}</ul>
+    </article>
+    <article class="panel">
+        <h2>Script review</h2>
+        <p>{{ item.founder_review.script_hook }}</p>
+        <p>{{ item.founder_review.word_count }} words · {{ item.founder_review.estimated_duration_seconds }} seconds</p>
+        <p>Versions: {{ item.production_review.script_versions }}</p>
+    </article>
+    <article class="panel">
+        <h2>Creative Quality</h2>
+        <p>Score: {{ item.founder_review.quality_score }}</p>
+        <p>Gate: {{ item.founder_review.gate_status | status_label }}</p>
+        <ul>{% for issue in item.founder_review.blocking_issues %}<li>{{ issue }}</li>{% endfor %}</ul>
+    </article>
+    <article class="panel">
+        <h2>Provider usage</h2>
+        <p>Fallback used: {{ item.provider_usage.fallback_used }}</p>
+        <ul>{% for stage in item.provider_usage.stages %}<li>{{ stage.capability | status_label }} &middot; {{ stage.provider }}</li>{% endfor %}</ul>
+    </article>
+    <article class="panel">
+        <h2>Assigned employees</h2>
+        <ul>{% for employee in item.mission_summary.assigned_employees %}<li>{{ employee }}</li>{% endfor %}</ul>
+    </article>
+</section>
+<section class="panel">
+    <h2>Artifacts &amp; versions</h2>
+    <ul>{% for artifact in item.mission_summary.artifacts %}<li>{{ artifact.artifact_type | status_label }} &middot; v{{ artifact.version_number }} &middot; {{ artifact.status | status_label }}</li>{% endfor %}</ul>
+</section>
+<section class="panel"><strong>NOT RENDERED</strong> · <strong>NOT PUBLISHED</strong> · Founder must approve, reject, or request one content revision.</section>
+{% else %}
+<section class="panel empty-state"><h2>No first content mission loaded</h2><p>Use the deterministic demo factory to view a sample review package.</p></section>
+{% endif %}
+{% endblock %}

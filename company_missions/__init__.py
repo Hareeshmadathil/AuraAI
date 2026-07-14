@@ -43,6 +43,11 @@ from company_missions.real_content_pilot import (
     RealContentPilotResult,
     create_real_content_pilot_demo_dashboard_service,
 )
+from company_missions.first_real_content import (
+    FirstContentMissionInput,
+    FirstContentMissionResult,
+    FirstRealContentMissionRunner,
+)
 
 __all__ = [
     "NicheCandidateInput",
@@ -70,4 +75,7 @@ __all__ = [
     "RealContentPilotInput",
     "RealContentPilotResult",
     "create_real_content_pilot_demo_dashboard_service",
+    "FirstContentMissionInput",
+    "FirstContentMissionResult",
+    "FirstRealContentMissionRunner",
 ]

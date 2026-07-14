@@ -54,7 +54,7 @@ class DashboardService:
         data_label: str | None = None,
         employees: Iterable[AgentIdentity | Any] = (),
         missions: Iterable[MissionRecord | Mission | MissionStatusSummary] = (),
-        decisions: Iterable[DecisionRecord] = (),
+        decisions: Iterable[DecisionRecord | ExecutiveDecisionSummary] = (),
         workflows: Iterable[WorkflowRecord | Any] = (),
         system_health: SystemHealthSummary | None = None,
         activity: Iterable[ActivityEventSummary] = (),
@@ -68,6 +68,7 @@ class DashboardService:
         learning_report: LearningReport | None = None,
         provider_state: ProviderState | None = None,
         real_content_pilot: dict[str, Any] | None = None,
+        first_content_mission: dict[str, Any] | None = None,
     ) -> None:
         """Store explicit state collections for snapshot generation."""
 
@@ -90,6 +91,7 @@ class DashboardService:
         self._learning_report = learning_report
         self._provider_state = provider_state or ProviderState()
         self._real_content_pilot = real_content_pilot
+        self._first_content_mission = first_content_mission
 
     def build_snapshot(self) -> DashboardSnapshot:
         """Create a validated point-in-time dashboard snapshot."""
@@ -171,6 +173,7 @@ class DashboardService:
             learning=self._learning_report,
             providers=self._provider_state,
             real_content_pilot=self._real_content_pilot,
+            first_content_mission=self._first_content_mission,
         )
 
     def get_render_artifact(self, artifact_id: UUID) -> RenderedArtifact | None:
@@ -360,9 +363,12 @@ class DashboardService:
 
     @staticmethod
     def _summarize_decision(
-        decision: DecisionRecord,
+        decision: DecisionRecord | ExecutiveDecisionSummary,
     ) -> ExecutiveDecisionSummary:
         """Convert a decision into dashboard-safe data."""
+
+        if isinstance(decision, ExecutiveDecisionSummary):
+            return decision
 
         return ExecutiveDecisionSummary(
             decision_id=decision.decision_id,
@@ -458,7 +464,7 @@ class DashboardService:
                     "Executive decision is "
                     f"{decision.outcome.value.replace('_', ' ')}."
                 ),
-                occurred_at=decision.updated_at,
+                occurred_at=getattr(decision, "updated_at", decision.created_at),
             )
             for decision in sorted_decisions
         )
