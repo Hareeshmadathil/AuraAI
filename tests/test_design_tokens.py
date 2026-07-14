@@ -28,7 +28,7 @@ def test_required_token_groups_exist() -> None:
 def test_templates_do_not_hardcode_brand_colors() -> None:
     """Prevent presentation values from leaking into Jinja templates."""
 
-    color_pattern = re.compile(r"#[0-9a-fA-F]{3,8}|rgba?\(")
+    color_pattern = re.compile(r"(?<!&)#[0-9a-fA-F]{3,8}|rgba?\(")
     for template in TEMPLATES.glob("*.html"):
         assert color_pattern.search(template.read_text(encoding="utf-8")) is None
 
