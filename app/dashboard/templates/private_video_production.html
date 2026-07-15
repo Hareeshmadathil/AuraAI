@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block heading %}Private Video Production{% endblock %}
+{% block content %}
+{% set video = snapshot.private_video_production %}
+<section class="panel" aria-labelledby="private-video-heading">
+    <div class="section-heading">
+        <div><p class="eyebrow">Founder-controlled audiovisual production</p><h2 id="private-video-heading">Mission Zero private draft</h2></div>
+        <span class="review-badge">INTERNAL REVIEW · NOT PUBLISHED</span>
+    </div>
+    {% if video %}
+    <dl class="render-summary">
+        <div><dt>Mission</dt><dd>{{ video.mission_name }}</dd></div>
+        <div><dt>Mission ID</dt><dd class="checksum">{{ video.mission_id }}</dd></div>
+        <div><dt>Approved source</dt><dd>Script v{{ video.script_version }}</dd></div>
+        <div><dt>Content Approval</dt><dd>{{ video.content_approval | replace('_', ' ') | title }}</dd></div>
+        <div><dt>Private Render Approval</dt><dd>{{ video.private_render_approval | replace('_', ' ') | title }}</dd></div>
+        <div><dt>Publishing approval</dt><dd>NOT AVAILABLE</dd></div>
+        <div><dt>Selected voice</dt><dd>{{ video.selected_voice or 'Founder selection required' }}</dd></div>
+        <div><dt>Voice audition</dt><dd>{{ video.audition_status | replace('_', ' ') | title }}</dd></div>
+        <div><dt>Narration</dt><dd>{{ video.narration_status | replace('_', ' ') | title }}</dd></div>
+        <div><dt>Scenes</dt><dd>{{ video.scene_count }}</dd></div>
+        <div><dt>Founder assets</dt><dd>{{ video.supplied_assets }} / {{ video.required_founder_assets }} supplied</dd></div>
+        <div><dt>Placeholders</dt><dd>{{ video.placeholder_count }}</dd></div>
+        <div><dt>Timeline</dt><dd>{{ video.timeline_duration_seconds | round(1) }} seconds</dd></div>
+        <div><dt>Subtitles</dt><dd>≤{{ video.subtitle_max_characters }} chars · ≤{{ video.subtitle_max_lines }} lines · ≤{{ video.subtitle_max_cps }} CPS</dd></div>
+        <div><dt>Render readiness</dt><dd>{{ video.render_readiness | replace('_', ' ') | title }}</dd></div>
+        <div><dt>Render status</dt><dd>{{ video.render_status | replace('_', ' ') | title }}</dd></div>
+        <div><dt>Output</dt><dd>{{ video.output_resolution }}</dd></div>
+        <div><dt>Verification</dt><dd>{{ video.verification_status | replace('_', ' ') | title }}</dd></div>
+        <div><dt>Private review</dt><dd>{{ video.private_review_status | replace('_', ' ') | title }}</dd></div>
+    </dl>
+    <p class="warning-banner"><strong>NOT PUBLISHED.</strong> Content, private rendering, and publishing remain separate boundaries.</p>
+    {% else %}
+    <div class="empty-state"><h3>No private production supplied</h3><p>Prepare an approved mission package locally to see readiness state.</p></div>
+    {% endif %}
+</section>
+{% endblock %}

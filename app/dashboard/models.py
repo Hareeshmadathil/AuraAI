@@ -274,3 +274,4 @@ class DashboardSnapshot(AuraBaseModel):
     providers: ProviderState = Field(default_factory=ProviderState)
     real_content_pilot: dict[str, Any] | None = None
     first_content_mission: dict[str, Any] | None = None
+    private_video_production: dict[str, Any] | None = None

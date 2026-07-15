@@ -69,6 +69,7 @@ class DashboardService:
         provider_state: ProviderState | None = None,
         real_content_pilot: dict[str, Any] | None = None,
         first_content_mission: dict[str, Any] | None = None,
+        private_video_production: dict[str, Any] | None = None,
     ) -> None:
         """Store explicit state collections for snapshot generation."""
 
@@ -92,6 +93,7 @@ class DashboardService:
         self._provider_state = provider_state or ProviderState()
         self._real_content_pilot = real_content_pilot
         self._first_content_mission = first_content_mission
+        self._private_video_production = private_video_production
 
     def build_snapshot(self) -> DashboardSnapshot:
         """Create a validated point-in-time dashboard snapshot."""
@@ -174,6 +176,7 @@ class DashboardService:
             providers=self._provider_state,
             real_content_pilot=self._real_content_pilot,
             first_content_mission=self._first_content_mission,
+            private_video_production=self._private_video_production,
         )
 
     def get_render_artifact(self, artifact_id: UUID) -> RenderedArtifact | None:

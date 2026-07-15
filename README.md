@@ -178,6 +178,33 @@ python -m production.rendering.pipeline --demo --founder-render-approved --outpu
 Use `--silent-fallback` only when a visibly silent review artifact is acceptable.
 Existing output directories are protected unless `--overwrite` is supplied.
 
+## Private Video Production v1
+
+The private-video layer turns an approved Mission Zero package into a local,
+founder-reviewed audiovisual production plan. Content approval, private-render
+approval, and publishing approval are independent. This milestone never grants
+publishing approval and every rendered draft is visibly marked `INTERNAL REVIEW`
+and `NOT FOR PUBLICATION`.
+
+The implementation uses installed Windows System.Speech voices when available,
+the existing subtitle wrapping logic, founder-supplied evidence assets, clearly
+labelled deterministic placeholders, and an injected local FFmpeg/FFprobe
+renderer. It does not download voices, footage, music, or models. Background
+music is optional and requires founder-supplied license metadata.
+
+```powershell
+python -m private_video_production.cli --check-environment
+python -m private_video_production.cli --list-voices
+python -m private_video_production.cli --mission-package "outputs/mission-zero-revision/f7385664-ac50-4e16-83c1-339781135a0a" --output-root outputs/private-video --prepare
+```
+
+Review the generated founder capture pack before selecting an installed voice.
+Full narration requires explicit content approval and founder confirmation.
+Rendering additionally requires private-render approval. A 720p placeholder
+preview and a 1080p private draft are supported; neither operation uploads or
+publishes. See `docs/private-video-production/` for the exact workflow,
+limitations, and safety boundaries.
+
 ## Creative quality
 
 The Creative Quality stage scores deterministic heuristics for hook, story,

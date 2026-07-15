@@ -168,4 +168,16 @@ def create_first_content_mission_demo_app() -> FastAPI:
     )
 
 
+def create_private_video_production_demo_app() -> FastAPI:
+    """Create a zero-argument planning-only private video demo app."""
+
+    from private_video_production.dashboard import (
+        create_private_video_production_demo_dashboard_service,
+    )
+
+    return create_app(
+        dashboard_service=create_private_video_production_demo_dashboard_service()
+    )
+
+
 app = create_app()

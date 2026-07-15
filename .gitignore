@@ -5,6 +5,7 @@ __pycache__/
 .env
 logs/
 outputs/
+founder_assets/
 data/cache/
 data/database/
 data/videos/

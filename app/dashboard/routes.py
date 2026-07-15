@@ -316,6 +316,21 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             active_path="/first-content-mission",
         )
 
+    @router.get("/private-video-production", response_class=HTMLResponse)
+    def private_video_production_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render safe private-video production readiness and approval state."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="private_video_production.html",
+            page_title="Private Video Production",
+            active_path="/private-video-production",
+        )
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,
