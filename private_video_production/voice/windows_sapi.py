@@ -10,6 +10,7 @@ from pathlib import Path
 from core import ValidationError
 
 from private_video_production.models import VoiceProfile
+from private_video_production.voice.wav import TARGET_SAMPLE_RATE
 
 
 class WindowsSapiAdapter:
@@ -75,7 +76,12 @@ class WindowsSapiAdapter:
             "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
             f"$s.SelectVoice('{escaped_voice}');$s.Rate={voice.rate};"
             f"$t=[IO.File]::ReadAllText('{escaped_input}',[Text.Encoding]::UTF8);"
-            f"$s.SetOutputToWaveFile('{escaped_output}');$s.Speak($t);$s.Dispose()"
+            "$f=[System.Speech.AudioFormat.SpeechAudioFormatInfo]::new("
+            f"{TARGET_SAMPLE_RATE},"
+            "[System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen,"
+            "[System.Speech.AudioFormat.AudioChannel]::Mono);"
+            f"$s.SetOutputToWaveFile('{escaped_output}',$f);"
+            "$s.Speak($t);$s.Dispose()"
         )
         try:
             completed = self._run(script, timeout=self._timeout)

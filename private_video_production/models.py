@@ -180,7 +180,7 @@ class VoiceSynthesisRequest(AuraBaseModel):
     segments: list[NarrationSegment] = Field(min_length=1)
     output_relative_path: Path
     audition: bool = False
-    sample_rate: int = Field(default=48_000, ge=8_000, le=96_000)
+    sample_rate: int = Field(default=24_000, ge=8_000, le=96_000)
     pronunciation_overrides: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("output_relative_path")
