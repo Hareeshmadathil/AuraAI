@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from app.dashboard.brand_models import create_brand_review, status_label
 from app.dashboard.models import DashboardSnapshot
 from app.dashboard.service import DashboardService
+from production_research.service import ProductionResearchService
 
 
 def get_dashboard_service(request: Request) -> DashboardService:
@@ -24,6 +25,18 @@ def get_dashboard_service(request: Request) -> DashboardService:
 DashboardServiceDependency = Annotated[
     DashboardService,
     Depends(get_dashboard_service),
+]
+
+
+def get_production_research_service(request: Request) -> ProductionResearchService:
+    """Resolve the isolated offline production-research service."""
+
+    return request.app.state.production_research_service
+
+
+ProductionResearchServiceDependency = Annotated[
+    ProductionResearchService,
+    Depends(get_production_research_service),
 ]
 
 
@@ -284,6 +297,23 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             template_name="providers.html",
             page_title="AI Providers",
             active_path="/providers",
+        )
+
+    @router.get("/production-research", response_class=HTMLResponse)
+    def production_research_page(
+        request: Request,
+        service: DashboardServiceDependency,
+        research_service: ProductionResearchServiceDependency,
+    ) -> HTMLResponse:
+        """Render the manually maintained offline provider research catalog."""
+
+        return render(
+            request=request,
+            service=service,
+            template_name="production_research.html",
+            page_title="AI Production Research",
+            active_path="/production-research",
+            extra_context={"research_report": research_service.build_report()},
         )
 
     @router.get("/mission-pilot", response_class=HTMLResponse)

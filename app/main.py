@@ -10,12 +10,14 @@ from fastapi.staticfiles import StaticFiles
 from app.dashboard.routes import create_dashboard_router
 from app.dashboard.models import DashboardMode
 from app.dashboard.service import DashboardService
+from production_research.service import ProductionResearchService
 
 
 def create_app(
     dashboard_service: DashboardService | None = None,
     *,
     mode: DashboardMode | str = DashboardMode.EMPTY,
+    production_research_service: ProductionResearchService | None = None,
 ) -> FastAPI:
     """Create and configure the local AuraAI dashboard application.
 
@@ -45,6 +47,9 @@ def create_app(
         description="Local command-center interface for AuraAI.",
     )
     application.state.dashboard_service = service
+    application.state.production_research_service = (
+        production_research_service or ProductionResearchService()
+    )
     application.mount(
         "/static",
         StaticFiles(directory=dashboard_root / "static"),

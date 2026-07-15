@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block heading %}AI Production Research{% endblock %}
+{% block content %}
+<section class="panel" aria-labelledby="research-overview-title">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Offline provider evaluation</p>
+            <h2 id="research-overview-title">Production stack candidates</h2>
+        </div>
+        <span class="status-chip">{{ research_report.providers | length }} providers</span>
+    </div>
+    <p>{{ research_report.data_notice }}</p>
+    <p>{{ research_report.methodology }}</p>
+</section>
+
+<section class="card-grid" aria-label="Provider category summaries">
+    {% for category in research_report.categories %}
+    <article class="info-card">
+        <p class="eyebrow">{{ category.category.value | replace('_', ' ') | title }}</p>
+        <h2>{{ category.average_score }}</h2>
+        <p>{{ category.provider_count }} candidate{{ '' if category.provider_count == 1 else 's' }} · {{ category.approved_count }} approved</p>
+        <p>Current recommendation: <strong>{{ category.recommended_provider or 'None recorded' }}</strong></p>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="panel" aria-labelledby="provider-catalog-title">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Manual placeholder catalog</p>
+            <h2 id="provider-catalog-title">Provider evaluations</h2>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Provider</th><th>Category</th><th>Score</th><th>Status</th><th>Access</th><th>Review</th></tr></thead>
+            <tbody>
+            {% for provider in research_report.providers %}
+                <tr>
+                    <td><a href="{{ provider.website }}">{{ provider.name }}</a></td>
+                    <td>{{ provider.category.value | replace('_', ' ') | title }}</td>
+                    <td>{{ provider.local_score }} / 100</td>
+                    <td><span class="status-badge {{ 'status-success' if provider.status.value == 'approved' else 'status-waiting' }}">{{ provider.status.value | title }}</span></td>
+                    <td>Free: {{ 'yes' if provider.free_tier_available else 'no' }} · Trial: {{ 'yes' if provider.trial_available else 'no' }} · API: {{ 'yes' if provider.api_available else 'no' }}</td>
+                    <td>
+                        <details>
+                            <summary>Evaluation notes</summary>
+                            <p><strong>Pricing:</strong> {{ provider.pricing_model.value | replace('_', ' ') | title }}</p>
+                            <p><strong>Use:</strong> {{ provider.recommended_use_case }}</p>
+                            <p><strong>License:</strong> {{ provider.commercial_license_notes }}</p>
+                            <p><strong>Strengths:</strong> {{ provider.strengths | join('; ') }}</p>
+                            <p><strong>Weaknesses:</strong> {{ provider.weaknesses | join('; ') }}</p>
+                            <p><strong>Last reviewed:</strong> {{ provider.last_reviewed }}</p>
+                        </details>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
