@@ -141,6 +141,7 @@ class FounderReviewPackage(AuraBaseModel):
     verification_warnings: list[str] = Field(default_factory=list)
     quality_score: float = Field(ge=0, le=100)
     gate_status: str
+    quality_breakdown_path: str = "quality/quality-breakdown.md"
     revision_history: list[str] = Field(default_factory=list)
     blocking_issues: list[str] = Field(default_factory=list)
     founder_decisions_required: list[str] = Field(default_factory=list)

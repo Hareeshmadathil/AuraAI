@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from core import ValidationError
+from creative_quality.intelligence import (
+    CreativeQualityIntelligence,
+    render_quality_breakdown_markdown,
+)
 from runtime_engine.event_bus import RuntimeEventBus
 from runtime_engine.models import RuntimeEventType
 
@@ -95,6 +99,11 @@ class FirstContentMissionExporter:
     def _payloads(self, result: FirstContentMissionResult) -> dict[str, str]:
         pilot = result.pilot
         scripts = result.script_versions
+        breakdown = result.creative_quality_package.quality_breakdown
+        if breakdown is None:
+            breakdown = CreativeQualityIntelligence().build(
+                result.creative_quality_package
+            )
         payloads = {
             "mission/mission.json": self._json(result.mission),
             "mission/history.json": self._json(result.mission.history),
@@ -105,7 +114,17 @@ class FirstContentMissionExporter:
             "seo/tags.txt": "\n".join([pilot.seo_artifact.primary_keyword, *pilot.seo_artifact.secondary_keywords]) + "\n",
             "seo/hashtags.txt": "\n".join(pilot.seo_artifact.hashtags) + "\n",
             "quality/creative-quality.json": self._json(result.creative_quality_package),
-            "quality/quality-summary.md": f"# Quality summary\n\nScore: {result.production_review.quality_score}\nGate: {result.founder_review.gate_status}\n",
+            "quality/quality-summary.md": (
+                f"# Quality summary\n\n"
+                f"Score: {result.production_review.quality_score}\n"
+                f"Gate: {result.founder_review.gate_status}\n\n"
+                "[Open the full Creative Quality breakdown]"
+                "(quality-breakdown.md)\n"
+            ),
+            "quality/quality-breakdown.json": self._json(breakdown),
+            "quality/quality-breakdown.md": (
+                render_quality_breakdown_markdown(breakdown)
+            ),
             "production/production-package.json": self._json(result.production_package),
             "production/thumbnail-concepts.json": self._json(result.production_package.thumbnail_plan),
             "production/shorts-package.json": self._json(result.production_package.short_form_package),
@@ -136,6 +155,8 @@ class FirstContentMissionExporter:
             f"# Founder review: {result.mission.title}\n\n"
             f"State: {result.mission.status.value}\n\n"
             f"Quality: {result.production_review.quality_score}\n\n"
+            "[Open the full Creative Quality breakdown]"
+            "(../quality/quality-breakdown.md)\n\n"
             "**FOUNDER REVIEW REQUIRED**\n\n**NOT RENDERED**\n\n**NOT PUBLISHED**\n"
         )
 

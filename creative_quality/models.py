@@ -68,6 +68,18 @@ class QualityDimension(StrEnum):
     PRODUCTION_COMPLETENESS = "production_completeness"
 
 
+class QualityDepartment(StrEnum):
+    """Founder-facing Creative Quality review departments."""
+
+    HOOK = "hook"
+    STORY = "story"
+    RETENTION = "retention"
+    MOTION = "motion"
+    SUBTITLES = "subtitles"
+    THUMBNAIL = "thumbnail"
+    FACTUALITY = "factuality"
+
+
 class QualityGateStatus(StrEnum):
     """Possible pre-render quality outcomes."""
 
@@ -385,6 +397,78 @@ class RevisionPlan(AuraBaseModel):
     _aware_created_at = field_validator("created_at")(_aware)
 
 
+class QualityDepartmentBreakdown(AuraBaseModel):
+    """Explain one founder-facing department's quality contribution."""
+
+    department: QualityDepartment
+    score: float = Field(ge=0, le=100)
+    weight: float = Field(gt=0, le=1)
+    passed: bool
+    contributing_dimensions: list[QualityDimension] = Field(min_length=1)
+    blockers: list[CreativeQualityIssue] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    suggested_employee: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_pass_status(self) -> "QualityDepartmentBreakdown":
+        if self.passed and self.blockers:
+            raise ValueError("A department with blockers cannot pass.")
+        return self
+
+
+class QualityRecommendation(AuraBaseModel):
+    """Actionable recommendation with explicit employee ownership."""
+
+    department: QualityDepartment
+    recommendation: str = Field(min_length=1)
+    suggested_employee: str = Field(min_length=1)
+    priority: QualitySeverity
+
+
+class QualityBreakdown(AuraBaseModel):
+    """Founder-ready explanation derived from the unchanged quality score."""
+
+    executive_summary: str = Field(min_length=1)
+    overall_score: float = Field(ge=0, le=100)
+    gate_status: QualityGateStatus
+    departments: list[QualityDepartmentBreakdown] = Field(
+        min_length=7,
+        max_length=7,
+    )
+    blocking_issues: list[CreativeQualityIssue] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    recommendations: list[QualityRecommendation] = Field(default_factory=list)
+    estimated_improvement_points: float = Field(ge=0, le=100)
+    estimated_score_after_revision: float = Field(ge=0, le=100)
+    heuristic_notice: str = (
+        "Explanatory projection of the existing deterministic quality score; "
+        "estimated improvement is not a performance guarantee."
+    )
+
+    @model_validator(mode="after")
+    def validate_breakdown(self) -> "QualityBreakdown":
+        departments = [item.department for item in self.departments]
+        if len(set(departments)) != len(departments):
+            raise ValueError("Quality departments must be unique.")
+        if set(departments) != set(QualityDepartment):
+            raise ValueError("Every quality department must be reported.")
+        if any(not issue.blocking for issue in self.blocking_issues):
+            raise ValueError("Breakdown blockers must be blocking issues.")
+        severity_order = {
+            QualitySeverity.BLOCKING: 4,
+            QualitySeverity.HIGH: 3,
+            QualitySeverity.MEDIUM: 2,
+            QualitySeverity.LOW: 1,
+            QualitySeverity.INFO: 0,
+        }
+        priorities = [severity_order[item.severity] for item in self.blocking_issues]
+        if priorities != sorted(priorities, reverse=True):
+            raise ValueError("Blocking issues must be sorted by severity.")
+        return self
+
+
 class CreativeQualityPackage(AuraBaseModel):
     package_id: UUID = Field(default_factory=uuid4)
     production_package_id: UUID
@@ -400,6 +484,7 @@ class CreativeQualityPackage(AuraBaseModel):
     issues: list[CreativeQualityIssue] = Field(default_factory=list)
     gate: CreativeQualityGate
     revision_plan: RevisionPlan
+    quality_breakdown: QualityBreakdown | None = None
     applied_revisions: list[str] = Field(default_factory=list)
     current_stage: CreativeQualityStage
     sample_data: bool

@@ -16,6 +16,7 @@ from agents.specialists import (
     ThumbnailPsychologist,
 )
 from core import DepartmentName, OperationResult, TaskRecord, utc_now
+from creative_quality.intelligence import CreativeQualityIntelligence
 from creative_quality.models import (
     CreativeQualityIssue,
     CreativeQualityPackage,
@@ -83,6 +84,7 @@ class CreativeQualityPipeline:
         scorer: CreativeQualityScorer,
         gate_evaluator: CreativeQualityGateEvaluator,
         revision_engine: DeterministicRevisionEngine,
+        quality_intelligence: CreativeQualityIntelligence | None = None,
         runtime_orchestrator: RuntimeOrchestrator | None = None,
         state_manager: RuntimeStateManager | None = None,
         event_bus: RuntimeEventBus | None = None,
@@ -98,6 +100,9 @@ class CreativeQualityPipeline:
         self.scorer = scorer
         self.gate_evaluator = gate_evaluator
         self.revision_engine = revision_engine
+        self.quality_intelligence = (
+            quality_intelligence or CreativeQualityIntelligence()
+        )
         self.runtime_orchestrator = runtime_orchestrator
         self.state_manager = state_manager or (
             runtime_orchestrator.state_manager
@@ -343,6 +348,11 @@ class CreativeQualityPipeline:
                 RuntimeEventType.REVISION_APPLIED,
                 "Safe deterministic revisions were applied to a package copy.",
             )
+        quality = quality.model_copy(
+            update={
+                "quality_breakdown": self.quality_intelligence.build(quality)
+            }
+        )
         self.state_manager.register_creative_quality_package(quality)
         self.state_manager.set_health_component(
             "creative_quality_pipeline",

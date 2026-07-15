@@ -209,6 +209,18 @@ footer { padding: 2rem 0; color: var(--muted); font-size: .75rem; text-align: ce
 .gate-blocked { color: var(--status-danger); border-color: var(--status-danger); }
 .gate-revision_required, .gate-founder_override_required { color: var(--status-warning); border-color: var(--status-warning); }
 .quality-grid blockquote { margin: .5rem 0; padding-left: 1rem; border-left: 3px solid var(--accent-blue); color: var(--muted); }
+.quality-breakdown { margin-bottom: 1rem; }
+.quality-department-table td { vertical-align: top; }
+.quality-indicator { display: inline-block; width: .65rem; height: .65rem; margin-right: .5rem; border-radius: 50%; }
+.quality-pass { background: var(--status-success); box-shadow: 0 0 .7rem color-mix(in srgb, var(--status-success) 55%, transparent); }
+.quality-fail { background: var(--status-danger); box-shadow: 0 0 .7rem color-mix(in srgb, var(--status-danger) 45%, transparent); }
+.quality-recommendations summary { color: var(--color-info); cursor: pointer; font-weight: 700; }
+.quality-recommendations[open] summary { margin-bottom: var(--space-2); }
+.quality-recommendations ul { min-width: 16rem; margin-bottom: 0; padding-left: var(--space-5); }
+.quality-priority-list { display: grid; gap: var(--space-3); padding-left: var(--space-5); }
+.quality-priority-list p { margin: var(--space-1) 0 0; color: var(--muted); }
+.quality-action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.quality-action-grid details { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); }
 
 /* Shared design-system components */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
@@ -357,6 +369,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; color: var(--color-info)
     .concept-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .component-showcase { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .pilot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .quality-action-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {

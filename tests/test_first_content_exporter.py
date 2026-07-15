@@ -18,6 +18,7 @@ def test_exporter_writes_structure_and_valid_checksums(tmp_path: Path) -> None:
     required = [
         "mission/mission.json", "research/research.json", "seo/seo.json",
         "script/script-v1.md", "quality/creative-quality.json",
+        "quality/quality-breakdown.json", "quality/quality-breakdown.md",
         "production/production-package.json", "founder-review/review-package.json",
         "manifest/artifact-manifest.json", "manifest/sha256.json",
     ]
@@ -28,6 +29,20 @@ def test_exporter_writes_structure_and_valid_checksums(tmp_path: Path) -> None:
     text = "\n".join(path.read_text(encoding="utf-8") for path in target.rglob("*.*"))
     assert "api_key" not in text.lower()
     assert "raw_response" not in text.lower()
+    breakdown = json.loads(
+        (target / "quality/quality-breakdown.json").read_text(encoding="utf-8")
+    )
+    assert len(breakdown["departments"]) == 7
+    markdown = (target / "quality/quality-breakdown.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## Executive Summary" in markdown
+    assert "## Department Table" in markdown
+    assert "## Estimated improvement after revision" in markdown
+    founder_review = (target / "founder-review/review-summary.md").read_text(
+        encoding="utf-8"
+    )
+    assert "../quality/quality-breakdown.md" in founder_review
 
 
 def test_exporter_prevents_overwrite(tmp_path: Path) -> None:

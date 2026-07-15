@@ -233,6 +233,7 @@ class FirstRealContentMissionRunner:
                 verification_warnings=pilot.script_artifact.claims_requiring_verification,
                 quality_score=quality.scores.overall,
                 gate_status=quality.gate.status.value,
+                quality_breakdown_path="quality/quality-breakdown.md",
                 revision_history=[f"Script v{item.version_number}" for item in pilot.script_versions],
                 blocking_issues=quality_blockers,
                 founder_decisions_required=["Approve, reject, or request one content revision."],

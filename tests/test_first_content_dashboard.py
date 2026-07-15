@@ -12,13 +12,22 @@ def test_factory_is_zero_argument_and_page_is_safe() -> None:
     client = TestClient(create_first_content_mission_demo_app())
     response = client.get("/first-content-mission")
     assert response.status_code == 200
-    for text in ("FOUNDER REVIEW REQUIRED", "NOT RENDERED", "NOT PUBLISHED", "Creative Quality"):
+    for text in (
+        "FOUNDER REVIEW REQUIRED",
+        "NOT RENDERED",
+        "NOT PUBLISHED",
+        "Creative Quality",
+        "Open Creative Quality breakdown",
+    ):
         assert text in response.text
     lowered = response.text.lower()
     assert "api_key" not in lowered and "raw_response" not in lowered
     snapshot = client.get("/api/dashboard").json()
     assert snapshot["first_content_mission"]["mission_summary"]["current_state"] == "founder_review"
     assert "production_package" not in snapshot["first_content_mission"]
+    assert snapshot["first_content_mission"]["founder_review"][
+        "quality_breakdown_path"
+    ] == "quality/quality-breakdown.md"
     assert snapshot["workflows"] and snapshot["recent_decisions"]
 
 

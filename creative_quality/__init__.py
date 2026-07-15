@@ -1,6 +1,10 @@
 """AuraAI deterministic Content Quality Engine v1."""
 
 from creative_quality.models import *
+from creative_quality.intelligence import (
+    CreativeQualityIntelligence,
+    render_quality_breakdown_markdown,
+)
 from creative_quality.quality_gate import CreativeQualityGateEvaluator
 from creative_quality.revision_engine import DeterministicRevisionEngine
 from creative_quality.scoring import (
@@ -11,12 +15,14 @@ from creative_quality.scoring import (
 
 __all__ = [
     "CreativeQualityGateEvaluator",
+    "CreativeQualityIntelligence",
     "CreativeQualityPipeline",
     "CreativeQualityScorer",
     "DEFAULT_QUALITY_WEIGHTS",
     "DeterministicRevisionEngine",
     "QualityScoreBreakdown",
     "create_creative_quality_pipeline",
+    "render_quality_breakdown_markdown",
 ]
 
 

@@ -13,8 +13,17 @@ def test_creative_quality_dashboard_displays_scores_gate_and_roster() -> None:
     assert "Creative Quality Command Center" in response.text
     assert "Internal deterministic heuristic" in response.text
     assert "Founder Review Separate" in response.text
+    assert "Founder decision breakdown" in response.text
+    assert "View recommendations" in response.text
+    assert "Estimated improvement after revision" in response.text
     assert data["creative_quality"]["scores"]["overall"] > 0
     assert data["creative_quality"]["gate"]["status"] == "passed"
+    breakdown = data["creative_quality"]["quality_breakdown"]
+    assert breakdown["overall_score"] == data["creative_quality"]["scores"][
+        "overall"
+    ]
+    assert len(breakdown["departments"]) == 7
+    assert all("suggested_employee" in item for item in breakdown["departments"])
     assert len(data["employees"]) == 40
     assert {item["job_title"] for item in data["employees"]} >= {
         "Creative Quality Director",

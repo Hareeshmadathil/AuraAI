@@ -3,10 +3,51 @@
 {% block content %}
 {% set quality = snapshot.creative_quality %}
 {% if quality %}
+{% set breakdown = quality.quality_breakdown %}
 <section class="quality-hero panel">
     <div><p class="eyebrow">Internal deterministic heuristic</p><h2>{{ quality.scores.overall }} / 100</h2><p>{{ quality.heuristic_label }}. This does not predict views, retention, CTR, subscribers, or revenue.</p></div>
     <div class="production-labels"><span class="quality-gate gate-{{ quality.gate.status.value }}"><span aria-hidden="true">●</span>{{ quality.gate.status.value | status_label }}</span>{% if quality.sample_data %}<span class="demo-badge">SAMPLE</span>{% endif %}<span class="review-badge">Founder Review Separate</span></div>
 </section>
+{% if breakdown %}
+<section class="panel quality-breakdown" aria-labelledby="quality-breakdown-title">
+    <div class="panel-header">
+        <div>
+            <p class="eyebrow">Creative Quality Intelligence V2</p>
+            <h2 id="quality-breakdown-title">Founder decision breakdown</h2>
+        </div>
+        <span>{{ breakdown.overall_score }} / 100</span>
+    </div>
+    <p>{{ breakdown.executive_summary }}</p>
+    <div class="decision-table">
+        <table class="quality-department-table">
+            <thead><tr><th>Department</th><th>Score</th><th>Weight</th><th>Result</th><th>Owner</th><th>Recommendations</th></tr></thead>
+            <tbody>
+            {% for department in breakdown.departments %}
+                <tr>
+                    <td>{{ department.department.value | title }}</td>
+                    <td><span class="quality-indicator {{ 'quality-pass' if department.passed else 'quality-fail' }}" aria-hidden="true"></span>{{ department.score }}</td>
+                    <td>{{ (department.weight * 100) | round(1) }}%</td>
+                    <td><span class="status-badge {{ 'status-success' if department.passed else 'status-danger' }}">{{ 'Pass' if department.passed else 'Fail' }}</span></td>
+                    <td>{{ department.suggested_employee }}</td>
+                    <td>
+                        <details class="quality-recommendations">
+                            <summary>View recommendations</summary>
+                            <ul>{% for recommendation in department.recommendations %}<li>{{ recommendation }}</li>{% endfor %}</ul>
+                            {% if department.warnings %}<h3>Warnings</h3><ul>{% for warning in department.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+                        </details>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<section class="dashboard-grid quality-grid">
+    <article class="panel"><p class="eyebrow">Priority</p><h2>Blocking issues</h2><ol class="quality-priority-list">{% for issue in breakdown.blocking_issues %}<li><strong>{{ issue.severity.value | title }} · {{ issue.title }}</strong><p>{{ issue.description }}</p><p>Remediation: {{ issue.remediation }}</p></li>{% else %}<li>No blocking issues.</li>{% endfor %}</ol></article>
+    <article class="panel"><p class="eyebrow">Assessment</p><h2>Strengths and weaknesses</h2><h3>Strengths</h3><ul>{% for item in breakdown.strengths %}<li>{{ item }}</li>{% else %}<li>No departments currently meet the review threshold.</li>{% endfor %}</ul><h3>Weaknesses</h3><ul>{% for item in breakdown.weaknesses %}<li>{{ item }}</li>{% else %}<li>No threshold weaknesses reported.</li>{% endfor %}</ul></article>
+    <article class="panel panel-wide"><p class="eyebrow">Revision outlook</p><h2>Estimated improvement after revision</h2><p><strong>+{{ breakdown.estimated_improvement_points }} points</strong> · estimated revised score {{ breakdown.estimated_score_after_revision }} / 100</p><p>{{ breakdown.heuristic_notice }}</p><div class="quality-action-grid">{% for recommendation in breakdown.recommendations %}<details class="quality-recommendations"><summary>{{ recommendation.priority.value | title }} · {{ recommendation.suggested_employee }}</summary><p>{{ recommendation.recommendation }}</p></details>{% endfor %}</div></article>
+</section>
+{% endif %}
 <section class="quality-score-grid" aria-label="Creative quality scores">
 {% for label, value in [('Hook', quality.scores.hook), ('Story', quality.scores.story), ('Pacing', quality.scores.pacing), ('Retention', quality.scores.retention), ('Clarity', quality.scores.clarity), ('Motion', quality.scores.motion), ('Subtitles', quality.scores.subtitles), ('Thumbnail', quality.scores.thumbnail), ('Factuality', quality.scores.factuality), ('Trust', quality.scores.trust), ('CTA', quality.scores.call_to_action), ('Production completeness', quality.scores.production_completeness)] %}
 <article class="metric-card"><p>{{ label }}</p><strong>{{ value }}</strong></article>{% endfor %}

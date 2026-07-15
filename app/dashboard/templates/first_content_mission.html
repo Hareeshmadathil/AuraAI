@@ -38,6 +38,7 @@
         <p>Score: {{ item.founder_review.quality_score }}</p>
         <p>Gate: {{ item.founder_review.gate_status | status_label }}</p>
         <ul>{% for issue in item.founder_review.blocking_issues %}<li>{{ issue }}</li>{% endfor %}</ul>
+        <a class="button" href="/creative-quality">Open Creative Quality breakdown</a>
     </article>
     <article class="panel">
         <h2>Provider usage</h2>
