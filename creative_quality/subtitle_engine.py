@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import textwrap
-
 from creative_quality.models import SubtitleLineAnalysis, SubtitleOptimization
 from production.models import SubtitlePackage, SubtitleSegment
+
+
+MAXIMUM_SUBTITLE_LINE_CHARACTERS = 42
+MINIMUM_PUNCTUATION_BREAK_CHARACTERS = 18
 
 
 class SubtitleQualityEngine:
@@ -77,16 +79,46 @@ class SubtitleQualityEngine:
             optimized_vtt_text="\n\n".join(vtt_blocks) + "\n",
         )
 
-    @staticmethod
-    def _wrap(text: str) -> str:
+    @classmethod
+    def _wrap(cls, text: str) -> str:
+        """Wrap text before analysis without exceeding the model limit."""
+
         normalized = " ".join(text.split())
-        parts = textwrap.wrap(
-            normalized,
-            width=38,
-            break_long_words=False,
-            break_on_hyphens=False,
-        )
-        return "\n".join(parts)
+        lines: list[str] = []
+        remaining = normalized
+        while len(remaining) > MAXIMUM_SUBTITLE_LINE_CHARACTERS:
+            break_at = cls._break_position(remaining)
+            lines.append(remaining[:break_at].rstrip())
+            remaining = remaining[break_at:].lstrip()
+        if remaining:
+            lines.append(remaining)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _break_position(text: str) -> int:
+        """Prefer a readable punctuation boundary, then whitespace."""
+
+        window = text[:MAXIMUM_SUBTITLE_LINE_CHARACTERS]
+        punctuation_breaks = [
+            index + 1
+            for index, character in enumerate(window)
+            if character in ",;:.!?-\u2014"
+            and index + 1 >= MINIMUM_PUNCTUATION_BREAK_CHARACTERS
+            and (
+                index + 1 == len(text)
+                or text[index + 1].isspace()
+            )
+        ]
+        if punctuation_breaks:
+            return punctuation_breaks[-1]
+        whitespace_breaks = [
+            index
+            for index, character in enumerate(window)
+            if character.isspace()
+        ]
+        if whitespace_breaks:
+            return whitespace_breaks[-1]
+        return MAXIMUM_SUBTITLE_LINE_CHARACTERS
 
     @staticmethod
     def _timestamp(seconds: float, *, srt: bool) -> str:
