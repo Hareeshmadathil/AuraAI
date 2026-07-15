@@ -139,7 +139,76 @@ class FirstContentMissionExporter:
                 + "\n\n".join(script.sections)
                 + f"\n\n## Call to action\n\n{script.call_to_action}\n"
             )
+        if result.revision_request is not None:
+            payloads.update(self._revision_payloads(result))
         return payloads
+
+    def _revision_payloads(
+        self,
+        result: FirstContentMissionResult,
+    ) -> dict[str, str]:
+        if (
+            result.quality_comparison is None
+            or len(result.production_versions) != 2
+            or len(result.quality_versions) != 2
+        ):
+            raise ValidationError(
+                "Controlled revision export requires both artifact versions.",
+                error_code="REVISION_EXPORT_INCOMPLETE",
+            )
+        original_quality, revised_quality = result.quality_versions
+        original_breakdown = original_quality.quality_breakdown
+        revised_breakdown = revised_quality.quality_breakdown
+        intelligence = CreativeQualityIntelligence()
+        if original_breakdown is None:
+            original_breakdown = intelligence.build(original_quality)
+        if revised_breakdown is None:
+            revised_breakdown = intelligence.build(revised_quality)
+        original_production, revised_production = result.production_versions
+        return {
+            "quality/original/creative-quality.json": self._json(
+                original_quality
+            ),
+            "quality/original/quality-breakdown.json": self._json(
+                original_breakdown
+            ),
+            "quality/original/quality-breakdown.md": (
+                render_quality_breakdown_markdown(original_breakdown)
+            ),
+            "quality/revised/creative-quality.json": self._json(revised_quality),
+            "quality/revised/quality-breakdown.json": self._json(
+                revised_breakdown
+            ),
+            "quality/revised/quality-breakdown.md": (
+                render_quality_breakdown_markdown(revised_breakdown)
+            ),
+            "production/original/production-package.json": self._json(
+                original_production
+            ),
+            "production/revised/production-package.json": self._json(
+                revised_production
+            ),
+            "revision/revision-request.json": self._json(
+                result.revision_request
+            ),
+            "revision/revision-request.md": (
+                f"# Founder revision request\n\n{result.revision_request.notes}\n\n"
+                + "\n".join(
+                    f"- {item}" for item in result.revision_request.objectives
+                )
+                + "\n"
+            ),
+            "revision/score-comparison.json": self._json(
+                result.quality_comparison
+            ),
+            "revision/score-comparison.md": self._comparison_markdown(result),
+            "mission/artifact-version-history.json": self._json(
+                result.mission.produced_artifacts
+            ),
+            "mission/artifact-version-history.md": self._history_markdown(
+                result
+            ),
+        }
 
     @staticmethod
     def _json(value: Any) -> str:
@@ -151,13 +220,60 @@ class FirstContentMissionExporter:
 
     @staticmethod
     def _review_markdown(result: FirstContentMissionResult) -> str:
+        comparison = (
+            "\n[Compare original and revised quality scores]"
+            "(../revision/score-comparison.md)\n"
+            if result.quality_comparison is not None
+            else ""
+        )
         return (
             f"# Founder review: {result.mission.title}\n\n"
             f"State: {result.mission.status.value}\n\n"
             f"Quality: {result.production_review.quality_score}\n\n"
             "[Open the full Creative Quality breakdown]"
             "(../quality/quality-breakdown.md)\n\n"
+            f"{comparison}"
             "**FOUNDER REVIEW REQUIRED**\n\n**NOT RENDERED**\n\n**NOT PUBLISHED**\n"
+        )
+
+    @staticmethod
+    def _comparison_markdown(result: FirstContentMissionResult) -> str:
+        comparison = result.quality_comparison
+        if comparison is None:
+            raise ValidationError("Quality comparison is unavailable.")
+        rows = "\n".join(
+            f"| {item.department.value.title()} | {item.original_score:.2f} | "
+            f"{item.revised_score:.2f} | {item.change:+.2f} |"
+            for item in comparison.departments
+        )
+        return (
+            "# Mission Zero quality comparison\n\n"
+            f"Original overall: **{comparison.original_overall_score:.2f}**\n\n"
+            f"Revised overall: **{comparison.revised_overall_score:.2f}**\n\n"
+            f"Change: **{comparison.overall_change:+.2f}**\n\n"
+            "| Department | Original | Revised | Change |\n"
+            "| --- | ---: | ---: | ---: |\n"
+            f"{rows}\n\n"
+            f"Original blockers: {comparison.original_blocker_count}\n\n"
+            f"Revised blockers: {comparison.revised_blocker_count}\n\n"
+            "**FOUNDER REVIEW REQUIRED**\n\n"
+            "**NOT RENDERED**\n\n"
+            "**NOT PUBLISHED**\n"
+        )
+
+    @staticmethod
+    def _history_markdown(result: FirstContentMissionResult) -> str:
+        rows = "\n".join(
+            f"| {item.artifact_type.value} | {item.name} | "
+            f"{item.version_number} | {item.status.value} | "
+            f"{item.parent_artifact_id or '—'} |"
+            for item in result.mission.produced_artifacts
+        )
+        return (
+            "# Mission Zero artifact version history\n\n"
+            "| Type | Name | Version | Status | Parent |\n"
+            "| --- | --- | ---: | --- | --- |\n"
+            f"{rows}\n"
         )
 
     def _validate_safe(self, payloads: dict[str, str]) -> None:

@@ -2,7 +2,7 @@
 
 from agents.base_employee import BaseEmployee
 from core import DepartmentName, OperationResult, TaskRecord
-from production.models import ContentBrief
+from production.models import ContentBrief, VideoScript
 from production.script_engine import ScriptEngine
 from production.task_inputs import require_model
 from providers import PromptCategory, ProviderCapability, build_department_prompt
@@ -22,6 +22,18 @@ class ScriptWriter(BaseEmployee):
 
     def perform_task(self, task: TaskRecord) -> OperationResult:
         brief = require_model(task.input_data, "content_brief", ContentBrief)
+        revision = task.input_data.get("controlled_script_revision")
+        if revision is not None:
+            script = require_model(
+                task.input_data,
+                "controlled_script_revision",
+                VideoScript,
+            ).model_copy(update={"brief_id": brief.brief_id})
+            script = VideoScript.model_validate(script)
+            return OperationResult.ok(
+                "Script Writer accepted one controlled founder revision.",
+                data={"video_script": script.model_dump(mode="json")},
+            )
         script = self.engine.build(brief)
         provider_result = self.request_provider(
             ProviderCapability.SCRIPT,

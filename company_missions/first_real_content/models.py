@@ -9,13 +9,19 @@ from uuid import UUID
 from pydantic import Field, field_validator, model_validator
 
 from core import AuraBaseModel, ContentPlatform, utc_now
-from creative_quality.models import CreativeQualityPackage
+from creative_quality.models import (
+    CreativeQualityPackage,
+    QualityDepartment,
+)
 from mission_engine import Mission, MissionExecutionStatus
 from production.models import ProductionPackage, VideoStyle
 from providers.models import ProviderCapability
 
 from company_missions.real_content_pilot.models import RealContentPilotResult
-from company_missions.real_content_pilot.artifacts import ScriptArtifact
+from company_missions.real_content_pilot.artifacts import (
+    RevisionRequestArtifact,
+    ScriptArtifact,
+)
 
 
 class EvidenceClassification(StrEnum):
@@ -164,6 +170,22 @@ class ProviderUsageSummary(AuraBaseModel):
     stages: list[ProviderStageSummary] = Field(default_factory=list)
 
 
+class DepartmentQualityComparison(AuraBaseModel):
+    department: QualityDepartment
+    original_score: float = Field(ge=0, le=100)
+    revised_score: float = Field(ge=0, le=100)
+    change: float = Field(ge=-100, le=100)
+
+
+class QualityRevisionComparison(AuraBaseModel):
+    original_overall_score: float = Field(ge=0, le=100)
+    revised_overall_score: float = Field(ge=0, le=100)
+    overall_change: float = Field(ge=-100, le=100)
+    departments: list[DepartmentQualityComparison] = Field(min_length=7)
+    original_blocker_count: int = Field(ge=0)
+    revised_blocker_count: int = Field(ge=0)
+
+
 class FirstContentMissionResult(AuraBaseModel):
     mission_summary: MissionSummary
     mission: Mission
@@ -178,9 +200,36 @@ class FirstContentMissionResult(AuraBaseModel):
     production_review: ProductionReviewPackage
     provider_usage: ProviderUsageSummary
     evidence_register: list[EvidenceItem] = Field(default_factory=list)
+    revision_request: RevisionRequestArtifact | None = None
+    quality_comparison: QualityRevisionComparison | None = None
+    production_versions: list[ProductionPackage] = Field(
+        default_factory=list,
+        exclude=True,
+    )
+    quality_versions: list[CreativeQualityPackage] = Field(
+        default_factory=list,
+        exclude=True,
+    )
     export_status: str = "not_exported"
     exported_path: str | None = None
     generated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_revision_lineage(self) -> "FirstContentMissionResult":
+        if self.revision_request is None:
+            return self
+        if len(self.script_versions) != 2:
+            raise ValueError("A controlled revision requires exactly two scripts.")
+        first, second = self.script_versions
+        if second.version_number != 2 or second.parent_artifact_id != first.artifact_id:
+            raise ValueError("Script v2 must identify script v1 as its parent.")
+        if self.quality_comparison is None:
+            raise ValueError("A controlled revision requires a quality comparison.")
+        if self.mission.status != MissionExecutionStatus.FOUNDER_REVIEW:
+            raise ValueError("A revised mission must return to founder review.")
+        if self.production_review.rendered or self.production_review.published:
+            raise ValueError("A controlled revision cannot approve delivery.")
+        return self
 
     def dashboard_projection(self) -> dict[str, object]:
         """Return safe summaries without full scripts or provider payloads."""

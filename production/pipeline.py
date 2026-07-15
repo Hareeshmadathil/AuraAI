@@ -33,6 +33,7 @@ from production.models import (
     ThumbnailPlan,
     VideoAssemblyManifest,
     VideoScript,
+    VideoScript,
     VisualGenerationPlan,
     VoiceoverPlan,
 )
@@ -106,6 +107,9 @@ class ProductionPipeline:
         production_input: ProductionInput | dict[str, Any],
         *,
         founder_approved: bool = False,
+        controlled_script_revision: VideoScript | None = None,
+        preserved_thumbnail_plan: ThumbnailPlan | None = None,
+        controlled_subtitle_engine: SubtitleEngine | None = None,
     ) -> OperationResult:
         """Build a review-ready package and stop at required approval."""
 
@@ -136,13 +140,22 @@ class ProductionPipeline:
         brief = ContentBrief.model_validate(director_result.data["content_brief"])
         outputs["content_brief"] = brief.model_dump(mode="json")
 
+        script_input: dict[str, Any] = {"content_brief": brief}
+        if controlled_script_revision is not None:
+            script_input["controlled_script_revision"] = (
+                controlled_script_revision
+            )
         script_result = self._run_employee(
             ProductionStage.SCRIPT,
             self.script_writer,
             TaskRecord(
-                title="Write deterministic flagship script",
+                title=(
+                    "Apply controlled founder script revision"
+                    if controlled_script_revision is not None
+                    else "Write deterministic flagship script"
+                ),
                 department=DepartmentName.PRODUCTION,
-                input_data={"content_brief": brief},
+                input_data=script_input,
             ),
             stages,
         )
@@ -196,19 +209,40 @@ class ProductionPipeline:
             return self._failure(visual, stages, outputs)
         outputs["visual_plan"] = visual.model_dump(mode="json")
 
-        thumbnail_result = self._run_employee(
-            ProductionStage.THUMBNAIL,
-            self.thumbnail_designer,
-            TaskRecord(
-                title="Create thumbnail concepts",
-                department=DepartmentName.PRODUCTION,
-                input_data={"video_script": script, "content_brief": brief},
-            ),
-            stages,
-        )
-        if not thumbnail_result.success:
-            return self._failure(thumbnail_result, stages, outputs)
-        thumbnail = ThumbnailPlan.model_validate(thumbnail_result.data["thumbnail_plan"])
+        if preserved_thumbnail_plan is None:
+            thumbnail_result = self._run_employee(
+                ProductionStage.THUMBNAIL,
+                self.thumbnail_designer,
+                TaskRecord(
+                    title="Create thumbnail concepts",
+                    department=DepartmentName.PRODUCTION,
+                    input_data={"video_script": script, "content_brief": brief},
+                ),
+                stages,
+            )
+            if not thumbnail_result.success:
+                return self._failure(thumbnail_result, stages, outputs)
+            thumbnail = ThumbnailPlan.model_validate(
+                thumbnail_result.data["thumbnail_plan"]
+            )
+        else:
+            thumbnail = ThumbnailPlan.model_validate(
+                preserved_thumbnail_plan.model_copy(
+                    update={"script_id": script.script_id}
+                )
+            )
+            stages.append(
+                self._stage_result(
+                    ProductionStage.THUMBNAIL,
+                    self.thumbnail_designer.name,
+                    self.thumbnail_designer.agent_id,
+                    True,
+                    f"thumbnail-plan:{thumbnail.plan_id}:preserved",
+                    warnings=[
+                        "The founder revision preserved the approved thumbnail direction."
+                    ],
+                )
+            )
         outputs["thumbnail_plan"] = thumbnail.model_dump(mode="json")
 
         short_result = self._run_employee(
@@ -231,7 +265,9 @@ class ProductionPipeline:
         subtitles = self._run_builder(
             ProductionStage.SUBTITLES,
             "Subtitle Engine",
-            lambda: self.subtitle_engine.build(voiceover),
+            lambda: (controlled_subtitle_engine or self.subtitle_engine).build(
+                voiceover
+            ),
             stages,
         )
         if isinstance(subtitles, OperationResult):

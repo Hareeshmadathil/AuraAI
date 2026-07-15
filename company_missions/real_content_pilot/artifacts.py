@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from core import AuraBaseModel, utc_now
 from creative_quality.models import QualityGateStatus
@@ -92,6 +92,31 @@ class CreativeQualityArtifact(_ImmutableArtifact):
     warnings: list[str] = Field(default_factory=list)
     revision_count: int = Field(ge=0, le=1)
     founder_override_allowed: bool
+
+
+class ProductionPackageArtifact(_ImmutableArtifact):
+    """Version metadata for a review-only structured production package."""
+
+    production_package_id: UUID
+    script_id: UUID
+    approval_status: str = Field(min_length=1)
+    render_status: str = Field(min_length=1)
+    rendered: bool = False
+    published: bool = False
+
+    @model_validator(mode="after")
+    def preserve_delivery_gate(self) -> "ProductionPackageArtifact":
+        if self.rendered or self.published:
+            raise ValueError("Revision packages cannot be rendered or published.")
+        return self
+
+
+class RevisionRequestArtifact(_ImmutableArtifact):
+    """Immutable founder instruction for one bounded content revision."""
+
+    notes: str = Field(min_length=1, max_length=10_000)
+    objectives: list[str] = Field(min_length=1)
+    requested_by: str = Field(default="Founder", min_length=1)
 
 
 class FounderReviewArtifact(_ImmutableArtifact):

@@ -8,6 +8,7 @@ from company_missions.first_real_content.manifest import (
 )
 from company_missions.first_real_content.models import (
     ArtifactVersionSummary,
+    DepartmentQualityComparison,
     EvidenceClassification,
     EvidenceItem,
     FirstContentMissionInput,
@@ -18,16 +19,22 @@ from company_missions.first_real_content.models import (
     ProductionReviewPackage,
     ProviderStageSummary,
     ProviderUsageSummary,
+    QualityRevisionComparison,
     ShortFormReviewPackage,
     ThumbnailReviewPackage,
 )
 from company_missions.first_real_content.review import FirstContentFounderReviewService
+from company_missions.first_real_content.revision import (
+    MissionZeroRevisionEngine,
+    MissionZeroRevisionService,
+)
 from company_missions.first_real_content.runner import FirstRealContentMissionRunner
 
 __all__ = [
     "ArtifactManifest",
     "ArtifactManifestEntry",
     "ArtifactVersionSummary",
+    "DepartmentQualityComparison",
     "EvidenceClassification",
     "EvidenceItem",
     "FirstContentFounderReviewService",
@@ -39,9 +46,12 @@ __all__ = [
     "FounderReviewPackage",
     "MetadataReviewPackage",
     "MissionSummary",
+    "MissionZeroRevisionEngine",
+    "MissionZeroRevisionService",
     "ProductionReviewPackage",
     "ProviderStageSummary",
     "ProviderUsageSummary",
+    "QualityRevisionComparison",
     "ShortFormReviewPackage",
     "ThumbnailReviewPackage",
 ]

@@ -5,6 +5,7 @@ from runtime_engine.models import RuntimeEventType
 from company_missions.real_content_pilot.models import RealContentPilotResult
 
 from company_missions.first_real_content.models import FirstContentMissionResult
+from company_missions.first_real_content.models import FirstContentMissionInput
 from company_missions.first_real_content.runner import FirstRealContentMissionRunner
 
 
@@ -40,6 +41,25 @@ class FirstContentFounderReviewService:
         pilot = self._runner.pilot.founder_review.request_revision(result.pilot, notes=notes)
         self._runner._emit(RuntimeEventType.FOUNDER_CONTENT_REVISION_REQUESTED)
         return self._with_updated_mission(result, pilot)
+
+    def request_and_execute_content_revision(
+        self,
+        result: FirstContentMissionResult,
+        mission_input: FirstContentMissionInput,
+        notes: str,
+    ) -> FirstContentMissionResult:
+        """Record and execute the single controlled Mission Zero revision."""
+
+        from company_missions.first_real_content.revision import (
+            MissionZeroRevisionService,
+        )
+
+        requested = self.request_content_revision(result, notes)
+        return MissionZeroRevisionService(self._runner).execute(
+            requested,
+            mission_input,
+            notes,
+        )
 
     @staticmethod
     def _with_updated_mission(

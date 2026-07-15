@@ -42,8 +42,10 @@ class MissionArtifactType(StrEnum):
     RESEARCH = "research"
     KEYWORDS = "keywords"
     SCRIPT = "script"
+    PRODUCTION_PACKAGE = "production_package"
     QUALITY_REPORT = "quality_report"
     APPROVAL_NOTES = "approval_notes"
+    REVISION_REQUEST = "revision_request"
 
 
 class MissionArtifactStatus(StrEnum):

@@ -215,6 +215,8 @@ class FirstRealContentMissionRunner:
             production_package=production,
             creative_quality_package=quality,
             script_versions=pilot.script_versions or [pilot.script_artifact],
+            production_versions=[production],
+            quality_versions=[quality],
             founder_review=FounderReviewPackage(
                 mission_objective=value.objective,
                 target_audience=value.target_audience,
