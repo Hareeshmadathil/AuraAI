@@ -386,6 +386,14 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             page_title="Web Intelligence",active_path="/web-intelligence",
             extra_context={"web":create_offline_demo_service().dashboard_state()})
 
+    @router.get("/intelligence-director", response_class=HTMLResponse)
+    def intelligence_director_page(request: Request, service: DashboardServiceDependency) -> HTMLResponse:
+        """Render safe deterministic intelligence recommendations."""
+        from intelligence_director.composition import create_demo_result
+        return render(request=request,service=service,template_name="intelligence_director.html",
+            page_title="Intelligence Director",active_path="/intelligence-director",
+            extra_context={"director":create_demo_result()})
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,

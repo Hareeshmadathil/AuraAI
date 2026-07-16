@@ -195,4 +195,9 @@ def create_web_intelligence_demo_app() -> FastAPI:
     return create_app(mode=DashboardMode.DEMO)
 
 
+def create_intelligence_director_demo_app() -> FastAPI:
+    """Create the zero-argument offline Intelligence Director dashboard."""
+    return create_app(mode=DashboardMode.DEMO)
+
+
 app = create_app()

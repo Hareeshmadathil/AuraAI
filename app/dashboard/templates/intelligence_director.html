@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header"><div><p class="eyebrow">Decision support</p><h1>Intelligence Director</h1><p>OFFLINE · FOUNDER APPROVAL REQUIRED · NO LIVE RESEARCH · NOT RENDERED · NOT PUBLISHED</p></div></section>
+<section class="metric-grid">
+<article class="metric-card"><span>Signals</span><strong>{{ director.signals|length }}</strong></article>
+<article class="metric-card"><span>Queue</span><strong>{{ director.queue.items|length }}</strong></article>
+<article class="metric-card"><span>Contradictions</span><strong>{{ director.contradictions|length }}</strong></article>
+<article class="metric-card"><span>Authority assessed</span><strong>{{ director.authority_assessments|length }}</strong></article>
+<article class="metric-card"><span>Founder state</span><strong>{{ director.queue.founder_approval_status.value }}</strong></article>
+</section>
+<section class="panel"><h2>Research queue</h2>{% for item in director.queue.items %}<details><summary>#{{ item.order }} {{ item.research_question.text }} — {{ item.priority_score.overall }}</summary><p>Depth: {{ item.recommended_depth.depth.value }}. Status: {{ item.execution_status.value }}.</p><p>{{ item.priority_score.rationale|join('; ') }}</p></details>{% endfor %}</section>
+<section class="panel"><h2>Contradictions and freshness</h2>{% for conflict in director.contradictions %}<details><summary>{{ conflict.status.value }}</summary><p>{{ conflict.summary }}</p><p>{{ conflict.recommended_wording }}</p></details>{% endfor %}<p>Stale or expired items: {{ director.freshness|selectattr('status.value','in',['stale','expired'])|list|length }}</p></section>
+<section class="panel"><h2>Evidence and competitor priorities</h2><p>Weighted claims: {{ director.evidence_weights|length }}. Competitor candidates: {{ director.competitor_priorities|length }}.</p><p>Only bounded summaries and scores are displayed; no full source text is retained.</p></section>
+<section class="panel"><h2>Pending Web Intelligence request</h2><p>Draft only. Live execution: {{ director.web_plan_request.live_execution }}. Exact founder approval is still required.</p></section>
+{% endblock %}

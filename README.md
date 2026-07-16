@@ -85,6 +85,20 @@ market or performance data.
 
 ## AI provider layer
 
+## Intelligence Director
+
+The Intelligence Director ranks founder-supplied and existing offline signals,
+weights evidence, preserves contradictions, applies freshness policies, and
+prepares founder-gated research queues. Its scores are local heuristics with no
+reach or revenue guarantee. It performs no live crawl, automatic approval,
+mission execution, rendering, upload, or publishing. Draft Web Intelligence
+requests remain hash-bound and require founder approval before any later work.
+
+```powershell
+python -m intelligence_director.cli --demo
+python -m uvicorn app.main:create_intelligence_director_demo_app --factory --reload
+```
+
 Employees request typed capabilities through the provider-neutral registry and
 router. The deterministic provider is the default and fallback. Provider usage
 state records safe operational metadata rather than prompts, source documents,
