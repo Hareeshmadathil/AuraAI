@@ -73,17 +73,24 @@ class MissionZeroIntegration:
         self.bus = DepartmentBus()
         self._register_handlers()
 
-    def run(self) -> MissionZeroIntegrationResult:
+    def run(
+        self,
+        mission: MissionRecord | None = None,
+    ) -> MissionZeroIntegrationResult:
         """Run deterministically to a pending founder approval and stop."""
 
-        mission = self.control.create_mission(
-            MissionRecord(
+        if mission is None:
+            mission = self.control.create_mission(
+                MissionRecord(
                 title="Mission Zero offline integration",
                 objective="Prepare one complete offline content mission for founder review.",
                 founder_owner="Hareesh",
                 risk=RiskLevel.MEDIUM,
+                )
             )
-        )
+        elif self.control.repository.get_mission(mission.mission_id) is None:
+            raise ValueError("Generated mission must be stored in Mission Control.")
+        self.context["canonical_mission"] = mission
         self.control.transition(mission.mission_id, MissionControlStatus.READY)
         tasks = self._create_tasks(mission)
         self.control.transition(
@@ -182,10 +189,11 @@ class MissionZeroIntegration:
 
     def _executive(self, command: DepartmentCommand) -> DepartmentResult:
         if command.idempotency_key.endswith(":ceo"):
+            canonical = self.context["canonical_mission"]
             value = ExecutiveMission(
                 mission_id=command.mission_id,
-                title="Mission Zero offline integration",
-                description="Prepare a complete offline founder-review package.",
+                title=canonical.title,
+                description=canonical.objective,
                 lead_department=DepartmentName.RESEARCH,
                 objectives=[MissionObjective(description="Reach founder review", success_metric="Pending approval request")],
             )
@@ -196,10 +204,11 @@ class MissionZeroIntegration:
         workflow = AuraCOO().coordinate_mission(self.context["executive_mission"])
         legacy_repository = InMemoryMissionRepository()
         MissionManager(legacy_repository, ArtifactRegistry())
+        canonical = self.context["canonical_mission"]
         legacy = Mission(
             mission_id=command.mission_id,
-            title="Mission Zero offline integration",
-            objective="Prepare an offline founder-review package.",
+            title=canonical.title,
+            objective=canonical.objective,
             capability=MissionCapability.CONTENT_PIPELINE,
             assigned_departments=[DepartmentName.RESEARCH, DepartmentName.PRODUCTION],
         )
