@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import Field, model_validator
@@ -16,6 +16,12 @@ class RiskLevel(StrEnum):
     MEDIUM = "medium"
     HIGH = "high"
     CONSEQUENTIAL = "consequential"
+
+
+class MissionDifficulty(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
 
 
 class MissionControlStatus(StrEnum):
@@ -66,6 +72,24 @@ class MissionRecord(AuraBaseModel):
     risk: RiskLevel = RiskLevel.LOW
     current_stage: str = Field(default="created", min_length=1, max_length=100)
     founder_owner: str = Field(min_length=1, max_length=150)
+    founder_goal: str = Field(default="Not supplied", min_length=1, max_length=2000)
+    expected_outcome: str = Field(default="Founder-reviewed mission output", min_length=1, max_length=3000)
+    business_value: str = Field(default="Validated operational learning", min_length=1, max_length=3000)
+    difficulty: MissionDifficulty = MissionDifficulty.MEDIUM
+    estimated_execution_minutes: int = Field(default=30, ge=1, le=43200)
+    required_departments: list[DepartmentName] = Field(default_factory=list)
+    required_approvals: list[str] = Field(default_factory=list)
+    success_criteria: list[str] = Field(default_factory=list)
+    failure_criteria: list[str] = Field(default_factory=list)
+    artifacts_expected: list[str] = Field(default_factory=list)
+    mission_dependencies: list[str] = Field(default_factory=list)
+    offline_execution: Literal[True] = True
+    provider_requirements: list[str] = Field(default_factory=list)
+    publishing_required: Literal[False] = False
+    rendering_required: Literal[False] = False
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    mission_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    reasoning_summary: str = Field(default="Pending generation rationale", min_length=1, max_length=3000)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
