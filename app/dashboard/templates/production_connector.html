@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block heading %}Production Connector{% endblock %}
+{% block content %}
+<section class="panel" aria-labelledby="connector-heading">
+  <p class="eyebrow">OFFLINE PREPARATION ONLY</p>
+  <h2 id="connector-heading">Mission Zero production readiness</h2>
+  <p><strong>FOUNDER ACTION REQUIRED</strong></p>
+  <dl>
+    <dt>Mission identity</dt><dd>{{ connector.mission_id }}</dd>
+    <dt>Script version</dt><dd>v{{ connector.script_version }}</dd>
+    <dt>Quality gate</dt><dd>{{ connector.quality_gate }}</dd>
+    <dt>ElevenLabs package</dt><dd>{{ 'Ready' if connector.elevenlabs_ready else 'Not ready' }}</dd>
+    <dt>HeyGen package</dt><dd>{{ 'Ready' if connector.heygen_ready else 'Not ready' }}</dd>
+    <dt>Editor package</dt><dd>{{ 'Ready' if connector.editor_ready else 'Not ready' }}</dd>
+    <dt>YouTube package</dt><dd>{{ 'Ready' if connector.youtube_ready else 'Not ready' }}</dd>
+    <dt>Founder assets</dt><dd>{{ connector.founder_assets_complete }}/12 captured; {{ connector.missing_asset_count }} missing</dd>
+    <dt>Avatar candidate</dt><dd>{{ connector.avatar_candidate }}</dd>
+    <dt>Voice</dt><dd>{{ connector.selected_voice_status }}</dd>
+    <dt>Publishing</dt><dd>false</dd>
+  </dl>
+  <p>Package readiness does not authorize provider use, rendering, upload, or publishing.</p>
+</section>
+{% endblock %}

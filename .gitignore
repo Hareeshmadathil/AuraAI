@@ -5,6 +5,11 @@ __pycache__/
 .env
 logs/
 outputs/
+production-assets/
+provider-packages/
+editor-package/
+youtube-package/
+founder-capture/
 founder_assets/
 data/cache/
 data/database/

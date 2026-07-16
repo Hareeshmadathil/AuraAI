@@ -185,4 +185,9 @@ def create_private_video_production_demo_app() -> FastAPI:
     )
 
 
+def create_production_connector_demo_app() -> FastAPI:
+    """Create the deterministic offline production-connector dashboard."""
+    return create_app(mode=DashboardMode.DEMO)
+
+
 app = create_app()

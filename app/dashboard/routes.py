@@ -361,6 +361,23 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             active_path="/private-video-production",
         )
 
+    @router.get("/production-connector", response_class=HTMLResponse)
+    def production_connector_page(
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render deterministic offline connector readiness without script text."""
+        from production_connector.composition import create_demo_service
+
+        return render(
+            request=request,
+            service=service,
+            template_name="production_connector.html",
+            page_title="Production Connector",
+            active_path="/production-connector",
+            extra_context={"connector": create_demo_service().status()},
+        )
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,
