@@ -14,6 +14,7 @@ from app.dashboard.brand_models import create_brand_review, status_label
 from app.dashboard.models import DashboardSnapshot
 from app.dashboard.service import DashboardService
 from production_research.service import ProductionResearchService
+from mission_control.models import MissionControlProjection
 
 
 def get_dashboard_service(request: Request) -> DashboardService:
@@ -460,5 +461,20 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
         """Return the current dashboard snapshot as JSON."""
 
         return service.build_snapshot()
+
+    @router.get(
+        "/api/mission-control",
+        response_model=MissionControlProjection,
+    )
+    def mission_control_api(request: Request) -> MissionControlProjection:
+        """Return the injected authoritative Mission Control projection."""
+
+        control = request.app.state.mission_control_service
+        if control is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Mission Control is not configured.",
+            )
+        return control.projection()
 
     return router

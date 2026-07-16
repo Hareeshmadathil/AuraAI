@@ -18,6 +18,7 @@ def create_app(
     *,
     mode: DashboardMode | str = DashboardMode.EMPTY,
     production_research_service: ProductionResearchService | None = None,
+    mission_control_service: object | None = None,
 ) -> FastAPI:
     """Create and configure the local AuraAI dashboard application.
 
@@ -50,6 +51,7 @@ def create_app(
     application.state.production_research_service = (
         production_research_service or ProductionResearchService()
     )
+    application.state.mission_control_service = mission_control_service
     application.mount(
         "/static",
         StaticFiles(directory=dashboard_root / "static"),
