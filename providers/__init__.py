@@ -36,7 +36,10 @@ from providers.models import (
     ScriptOutput,
     StoryOutput,
     VideoPromptOutput,
+    StructuredJsonOutput,
+    TextReasoningOutput,
 )
+from providers.multi_llm import ProviderRoutingMode
 from providers.prompt_template import (
     PromptCategory, PromptSafetyLevel, PromptTemplate, PromptVariable,
     ProviderPrompt, build_department_prompt,
@@ -66,14 +69,15 @@ __all__ = [
     "StoryProvider", "VideoPromptOutput", "VideoPromptProvider", "provider_cache_key",
     "build_department_prompt",
     "create_provider_router",
+    "ProviderRoutingMode", "StructuredJsonOutput", "TextReasoningOutput",
+    "create_multi_llm_router",
 ]
 
 
 def __getattr__(name: str) -> Any:
     """Load the optional composition root without import-time coupling."""
 
-    if name == "create_provider_router":
-        from providers.composition import create_provider_router
-
-        return create_provider_router
+    if name in {"create_provider_router", "create_multi_llm_router"}:
+        from providers.composition import create_multi_llm_router, create_provider_router
+        return {"create_provider_router": create_provider_router, "create_multi_llm_router": create_multi_llm_router}[name]
     raise AttributeError(name)

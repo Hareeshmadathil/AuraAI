@@ -55,6 +55,13 @@ SUPPORTED_GEMINI_CAPABILITIES = frozenset(
         ProviderCapability.REVIEW,
         ProviderCapability.METADATA,
         ProviderCapability.AUDIENCE,
+        ProviderCapability.REASONING,
+        ProviderCapability.PLANNING,
+        ProviderCapability.SUMMARIZATION,
+        ProviderCapability.CODING,
+        ProviderCapability.REWRITING,
+        ProviderCapability.STRUCTURED_JSON,
+        ProviderCapability.LONG_CONTEXT,
     }
 )
 

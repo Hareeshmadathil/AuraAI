@@ -15,6 +15,7 @@ from providers.models import (
     ProviderOutput,
     ProviderState,
 )
+from providers.multi_llm import ProviderRoutingMode
 from providers.prompt_template import ProviderPrompt
 from providers.provider_result import ProviderResult
 from providers.rate_limits import ProviderRateLimiter
@@ -41,6 +42,8 @@ class ProviderRouter:
         safety_validator: SafetyValidator | None = None,
         response_validator: ResponseValidator | None = None,
         fallback_enabled: bool = True,
+        routing_mode: ProviderRoutingMode = ProviderRoutingMode.AUTO,
+        default_provider: str | None = None,
     ) -> None:
         self.registry = registry
         self.fallback = fallback or DeterministicProvider()
@@ -51,6 +54,8 @@ class ProviderRouter:
         self.safety_validator = safety_validator or SafetyValidator()
         self.response_validator = response_validator or ResponseValidator()
         self.fallback_enabled = fallback_enabled
+        self.routing_mode = routing_mode
+        self.default_provider = default_provider
         self._cache_hits = 0
         self._cache_hits_by_provider: dict[str, int] = {}
         self.logger = get_logger("providers.router")
@@ -63,32 +68,36 @@ class ProviderRouter:
         """Return validated typed output, falling back on every provider failure."""
 
         self.safety_validator.validate_prompt(prompt)
-        provider: Provider | None = None
-        try:
-            provider = self.registry.resolve(capability)
-            self._check_ready(provider)
-            self._emit(
-                "PROVIDER_SELECTED",
-                f"Provider selected for {capability.value}.",
-                provider.descriptor.name,
-            )
-            self.rate_limiter.acquire(provider.descriptor.name)
-            cache_key = provider_cache_key(
-                capability,
-                prompt,
-                provider.descriptor.name,
-            )
-            cached = self._cached(cache_key, provider.descriptor.name)
-            if cached is not None:
-                return cached
-            result = self._call(
-                provider,
-                capability,
-                prompt,
-                fallback_used=False,
-                acquire_rate=False,
-            )
-        except Exception as error:
+        preferred = self.routing_mode.provider_order or ((self.default_provider,) if self.default_provider else ())
+        allowed = frozenset(self.routing_mode.provider_order) if self.routing_mode != ProviderRoutingMode.AUTO else None
+        candidates = tuple(provider for provider in self.registry.candidates(capability, preferred)
+                           if allowed is None or provider.descriptor.name in allowed)
+        result: ProviderResult[ProviderOutput] | None = None
+        cache_key = ""
+        last_error: Exception | None = None
+        for provider in candidates:
+            try:
+                self._check_ready(provider)
+                self._emit("PROVIDER_SELECTED", f"Provider selected for {capability.value}.", provider.descriptor.name)
+                self.rate_limiter.acquire(provider.descriptor.name)
+                cache_key = provider_cache_key(capability, prompt, provider.descriptor.name)
+                cached = self._cached(cache_key, provider.descriptor.name)
+                if cached is not None:
+                    return cached
+                result = self._call(provider, capability, prompt, fallback_used=False, acquire_rate=False)
+                break
+            except Exception as error:
+                last_error = error
+                self.logger.warning("Provider %s failed for capability %s (%s).",
+                    provider.descriptor.name, capability.value, error.__class__.__name__)
+                safe_error_code = self._safe_error_code(error)
+                self._emit("PROVIDER_FAILED", f"Provider failed for {capability.value}; no prompt data retained.",
+                    provider.descriptor.name, safe_error_code=safe_error_code)
+                recorder = getattr(provider, "record_fallback", None)
+                if callable(recorder): recorder(safe_error_code, self._safe_diagnostic(error))
+                continue
+        if result is None:
+            error = last_error or RuntimeError("No configured provider supports the requested capability.")
             self.logger.warning(
                 "Provider failed for capability %s; "
                 "deterministic fallback selected (%s).",
@@ -99,15 +108,11 @@ class ProviderRouter:
             self._emit(
                 "PROVIDER_FAILED",
                 f"Provider failed for {capability.value}; no prompt data retained.",
-                provider.descriptor.name if provider is not None else None,
+                None,
                 safe_error_code=safe_error_code,
             )
-            if provider is not None:
-                recorder = getattr(provider, "record_fallback", None)
-                if callable(recorder):
-                    recorder(safe_error_code, self._safe_diagnostic(error))
             if not self.fallback_enabled:
-                raise
+                raise error
             self._emit(
                 "PROVIDER_FALLBACK",
                 f"Deterministic fallback selected for {capability.value}.",

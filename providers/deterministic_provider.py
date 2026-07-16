@@ -12,6 +12,7 @@ from providers.models import (
     ProviderCapability, ProviderDescriptor, ProviderKind, ProviderOutput,
     ResearchOutput, ReviewOutput, SEOOutput, SceneOutput, ScriptOutput,
     StoryOutput, VideoPromptOutput,
+    StructuredJsonOutput, TextReasoningOutput,
 )
 from providers.prompt_template import ProviderPrompt
 from providers.provider_result import ProviderResult
@@ -221,5 +222,12 @@ class DeterministicProvider:
                     "or request occurred."
                 ),
             ),
+            ProviderCapability.REASONING: TextReasoningOutput(text=f"Reason carefully about {label}."),
+            ProviderCapability.PLANNING: TextReasoningOutput(text=f"Create a reviewable plan for {label}."),
+            ProviderCapability.SUMMARIZATION: TextReasoningOutput(text=f"Concise summary of {label}."),
+            ProviderCapability.CODING: TextReasoningOutput(text=f"Typed implementation guidance for {label}."),
+            ProviderCapability.REWRITING: TextReasoningOutput(text=f"Clear rewrite guidance for {label}."),
+            ProviderCapability.STRUCTURED_JSON: StructuredJsonOutput(data={"subject": label, "review_required": True}),
+            ProviderCapability.LONG_CONTEXT: TextReasoningOutput(text=f"Long-context analysis of {label}."),
         }
         return outputs[capability]

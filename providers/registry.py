@@ -34,14 +34,34 @@ class ProviderRegistry:
             if name in names:
                 names.remove(name)
 
-    def resolve(self, capability: ProviderCapability) -> Provider:
-        for name in self._capabilities.get(capability, []):
-            provider = self._providers[name]
-            if provider.descriptor.enabled:
-                return provider
+    def resolve(
+        self,
+        capability: ProviderCapability,
+        *,
+        preferred_names: tuple[str, ...] = (),
+        allowed_names: frozenset[str] | None = None,
+    ) -> Provider:
+        providers = self.candidates(capability, preferred_names)
+        for provider in providers:
+            name = provider.descriptor.name
+            if allowed_names is not None and name not in allowed_names:
+                continue
+            return provider
         raise ProviderUnavailableError(
             f"No enabled provider is registered for {capability.value}."
         )
+
+    def candidates(
+        self,
+        capability: ProviderCapability,
+        preferred_names: tuple[str, ...] = (),
+    ) -> tuple[Provider, ...]:
+        """Return enabled candidates in deterministic preference order."""
+
+        names = self._capabilities.get(capability, [])
+        rank = {name: index for index, name in enumerate(preferred_names)}
+        ordered = sorted(names, key=lambda name: (rank.get(name, len(rank)), names.index(name)))
+        return tuple(self._providers[name] for name in ordered if self._providers[name].descriptor.enabled)
 
     def descriptors(self) -> tuple[ProviderDescriptor, ...]:
         return tuple(provider.descriptor for provider in self._providers.values())

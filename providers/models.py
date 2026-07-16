@@ -30,6 +30,13 @@ class ProviderCapability(StrEnum):
     SCENE = "scene"
     ANIMATION = "animation"
     FLOW = "flow"
+    REASONING = "reasoning"
+    PLANNING = "planning"
+    SUMMARIZATION = "summarization"
+    CODING = "coding"
+    REWRITING = "rewriting"
+    STRUCTURED_JSON = "structured_json"
+    LONG_CONTEXT = "long_context"
 
 
 class ProviderKind(StrEnum):
@@ -129,6 +136,18 @@ class FlowOutput(AuraBaseModel):
     message: str = Field(min_length=1, max_length=1000)
 
 
+class TextReasoningOutput(AuraBaseModel):
+    """Provider-neutral response for general text reasoning capabilities."""
+
+    text: str = Field(min_length=1, max_length=30000)
+
+
+class StructuredJsonOutput(AuraBaseModel):
+    """Validated JSON object returned by a text reasoning provider."""
+
+    data: dict[str, Any]
+
+
 ProviderOutput = (
     ResearchOutput
     | ScriptOutput
@@ -145,6 +164,8 @@ ProviderOutput = (
     | SceneOutput
     | AnimationOutput
     | FlowOutput
+    | TextReasoningOutput
+    | StructuredJsonOutput
 )
 
 
@@ -241,4 +262,11 @@ def provider_output_model(capability: ProviderCapability) -> type[AuraBaseModel]
         ProviderCapability.SCENE: SceneOutput,
         ProviderCapability.ANIMATION: AnimationOutput,
         ProviderCapability.FLOW: FlowOutput,
+        ProviderCapability.REASONING: TextReasoningOutput,
+        ProviderCapability.PLANNING: TextReasoningOutput,
+        ProviderCapability.SUMMARIZATION: TextReasoningOutput,
+        ProviderCapability.CODING: TextReasoningOutput,
+        ProviderCapability.REWRITING: TextReasoningOutput,
+        ProviderCapability.STRUCTURED_JSON: StructuredJsonOutput,
+        ProviderCapability.LONG_CONTEXT: TextReasoningOutput,
     }[capability]
