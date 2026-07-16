@@ -3,6 +3,13 @@ import json
 from pathlib import Path
 import pytest
 from web_intelligence.adapters import HttpPublicAdapter
+from web_intelligence.adapters.crawl4ai_adapter import (
+    INSTALLED_REASON,
+    PINNED_VERSION,
+    InstalledCrawl4AIAdapter,
+    create_crawl4ai_adapter,
+)
+from web_intelligence.adapters.unavailable import UnavailableAdapter
 from web_intelligence.enums import AdapterKind,EvidenceClassification,OperatingMode
 from web_intelligence.evidence import create_evidence
 from web_intelligence.exceptions import ResourceLimitError
@@ -28,3 +35,66 @@ def test_evidence_and_citation_export_are_bounded(tmp_path:Path):
     payload=json.loads(path.read_text()); assert payload["citations"][0]["url"]=="https://example.com/"
 def test_export_path_traversal_rejected(tmp_path:Path):
     with pytest.raises(Exception): WebReportExporter(tmp_path).export_report([],[],"../outside.json")
+
+
+def test_crawl4ai_missing_returns_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        "web_intelligence.adapters.crawl4ai_adapter.importlib.util.find_spec",
+        lambda name: None,
+    )
+    value = create_crawl4ai_adapter()
+    assert isinstance(value, UnavailableAdapter)
+    assert value.status.available is False
+    assert value.status.external_operations_enabled is False
+
+
+def test_crawl4ai_matching_install_is_available_but_execution_blocked(monkeypatch):
+    monkeypatch.setattr(
+        "web_intelligence.adapters.crawl4ai_adapter.importlib.util.find_spec",
+        lambda name: object(),
+    )
+    monkeypatch.setattr(
+        "web_intelligence.adapters.crawl4ai_adapter.metadata.version",
+        lambda name: PINNED_VERSION,
+    )
+    value = create_crawl4ai_adapter()
+    assert isinstance(value, InstalledCrawl4AIAdapter)
+    assert value.status.available is True
+    assert value.status.external_operations_enabled is False
+    assert value.status.version == PINNED_VERSION
+    assert value.status.reason == INSTALLED_REASON
+    with pytest.raises(Exception) as error:
+        value.execute(request())
+    assert getattr(error.value, "error_code", "") == "CRAWL4AI_RUNTIME_REQUIRED"
+
+
+def test_crawl4ai_version_mismatch_reports_actual_version(monkeypatch):
+    monkeypatch.setattr(
+        "web_intelligence.adapters.crawl4ai_adapter.importlib.util.find_spec",
+        lambda name: object(),
+    )
+    monkeypatch.setattr(
+        "web_intelligence.adapters.crawl4ai_adapter.metadata.version",
+        lambda name: "9.9.9",
+    )
+    value = create_crawl4ai_adapter()
+    assert value.status.available is True
+    assert value.status.external_operations_enabled is False
+    assert value.status.version == "9.9.9"
+    assert "pinned version is 0.9.1" in value.status.reason
+
+
+def test_crawl4ai_detection_has_no_runtime_or_network_side_effect(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "web_intelligence.adapters.crawl4ai_adapter.importlib.util.find_spec",
+        lambda name: object(),
+    )
+    monkeypatch.setattr(
+        "web_intelligence.adapters.crawl4ai_adapter.metadata.version",
+        lambda name: PINNED_VERSION,
+    )
+    value = create_crawl4ai_adapter(runtime=lambda request: calls.append(request))
+    assert calls == []
+    assert "crawl4ai" not in __import__("sys").modules
+    assert value.status.external_operations_enabled is True

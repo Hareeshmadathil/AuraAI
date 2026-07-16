@@ -6,7 +6,8 @@ from web_intelligence.composition import create_offline_demo_service
 
 def test_cli_safe_inventory_and_live_failure(capsys):
     assert main(["--list-adapters"])==0; output=capsys.readouterr().out
-    assert "crawl4ai" in output and "browser_use" in output
+    assert "adapter=crawl4ai available=" in output
+    assert "adapter=browser_use available=false version=0.13.4" in output
     assert main(["--crawl-public"])==2
 def test_offline_demo_is_deterministic_and_no_execution():
     first=create_offline_demo_service().dashboard_state(); second=create_offline_demo_service().dashboard_state()
