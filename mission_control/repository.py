@@ -91,7 +91,7 @@ class SQLiteMissionControlRepository(MissionControlRepository):
         if path != root and root not in path.parents:
             raise ValueError("Mission Control database path escapes allowed root.")
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(path)
+        self.connection = sqlite3.connect(path, check_same_thread=False)
         self.connection.execute("PRAGMA foreign_keys = ON")
         self._initialize()
 

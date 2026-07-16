@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 from datetime import timedelta
 from uuid import UUID
 
 from core import utc_now
 from mission_control.models import (
-    ApprovalRequest, ApprovalState, DepartmentCommand, DepartmentResult,
+    ApprovalRequest, ApprovalState, ArtifactRecord, DepartmentCommand, DepartmentResult,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
     RiskLevel, TaskRecord, TaskStatus,
 )
@@ -58,6 +59,38 @@ class MissionControlService:
         self._event("task.created", task.mission_id, task.task_id)
         return task
 
+    def register_artifact(
+        self,
+        *,
+        mission_id: UUID,
+        task_id: UUID,
+        artifact_type: str,
+        location: str,
+        value: object,
+        provenance: dict[str, object],
+    ) -> ArtifactRecord:
+        """Register a deterministic logical artifact produced by one task."""
+
+        self._mission(mission_id)
+        self._task(task_id)
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+        artifact = ArtifactRecord(
+            mission_id=mission_id,
+            task_id=task_id,
+            artifact_type=artifact_type,
+            location=location,
+            content_hash=hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+            provenance=provenance,
+        )
+        self.repository.save_artifact(artifact)
+        self._event(
+            "artifact.registered",
+            mission_id,
+            task_id,
+            {"artifact_id": str(artifact.artifact_id), "type": artifact_type},
+        )
+        return artifact
+
     def next_actions(self, mission_id: UUID) -> list[TaskRecord]:
         tasks = self.repository.list_tasks(mission_id)
         by_id = {item.task_id: item for item in tasks}
@@ -100,7 +133,12 @@ class MissionControlService:
         status = TaskStatus.COMPLETED if result.success else (TaskStatus.RETRY_PENDING if task.attempts < task.maximum_attempts else TaskStatus.FAILED)
         updated = task.model_copy(update={"status": status, "blocking_reason": result.error_code, "updated_at": utc_now()})
         self._update_task(updated)
-        self._event("task.completed" if result.success else "task.failed", task.mission_id, task.task_id)
+        self._event(
+            "task.completed" if result.success else "task.failed",
+            task.mission_id,
+            task.task_id,
+            {"title": task.title},
+        )
         return updated
 
     def request_approval(self, task: TaskRecord, *, expires_in: timedelta = timedelta(hours=24)) -> ApprovalRequest:
