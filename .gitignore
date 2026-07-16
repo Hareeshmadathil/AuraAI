@@ -13,6 +13,7 @@ founder-capture/
 founder_assets/
 data/cache/
 data/database/
+data/knowledge/
 data/videos/
 data/audio/
 data/transcripts/

@@ -394,6 +394,14 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             page_title="Intelligence Director",active_path="/intelligence-director",
             extra_context={"director":create_demo_result()})
 
+    @router.get("/knowledge-manager", response_class=HTMLResponse)
+    def knowledge_manager_page(request: Request, service: DashboardServiceDependency) -> HTMLResponse:
+        """Render the in-memory, founder-controlled knowledge demo."""
+        from knowledge_manager.composition import create_demo_result
+        return render(request=request,service=service,template_name="knowledge_manager.html",
+            page_title="Knowledge Manager",active_path="/knowledge-manager",
+            extra_context={"knowledge":create_demo_result(),"schema_version":1,"storage_status":"in-memory demo"})
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,

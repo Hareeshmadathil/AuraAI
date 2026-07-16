@@ -200,4 +200,9 @@ def create_intelligence_director_demo_app() -> FastAPI:
     return create_app(mode=DashboardMode.DEMO)
 
 
+def create_knowledge_manager_demo_app() -> FastAPI:
+    """Create the zero-argument in-memory Knowledge Manager dashboard."""
+    return create_app(mode=DashboardMode.DEMO)
+
+
 app = create_app()

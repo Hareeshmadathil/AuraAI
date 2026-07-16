@@ -99,6 +99,20 @@ python -m intelligence_director.cli --demo
 python -m uvicorn app.main:create_intelligence_director_demo_app --factory --reload
 ```
 
+## Knowledge Manager
+
+The Knowledge Manager provides evidence-bound, versioned local memory using an
+injected in-memory repository or Python standard-library SQLite. It uses no
+vector database and performs no live research. Historical versions are
+immutable, stale knowledge cannot be silently reused, and sensitive or
+strategic storage remains founder-controlled. It does not guarantee reach or
+revenue and cannot execute missions, render, upload, or publish.
+
+```powershell
+python -m knowledge_manager.cli --demo
+python -m uvicorn app.main:create_knowledge_manager_demo_app --factory --reload
+```
+
 Employees request typed capabilities through the provider-neutral registry and
 router. The deterministic provider is the default and fallback. Provider usage
 state records safe operational metadata rather than prompts, source documents,
