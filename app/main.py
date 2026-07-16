@@ -190,4 +190,9 @@ def create_production_connector_demo_app() -> FastAPI:
     return create_app(mode=DashboardMode.DEMO)
 
 
+def create_web_intelligence_demo_app() -> FastAPI:
+    """Create a zero-argument offline web-intelligence dashboard."""
+    return create_app(mode=DashboardMode.DEMO)
+
+
 app = create_app()

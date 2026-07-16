@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block heading %}Web Intelligence{% endblock %}
+{% block content %}
+<section class="panel"><p class="eyebrow">FOUNDER-CONTROLLED PUBLIC RESEARCH</p><h2>Offline safety status</h2>
+<p><strong>READ ONLY · NO LOGIN · NO PUBLISHING</strong></p>
+<dl><dt>Mode</dt><dd>{{ web.mode.value }}</dd><dt>Pending plans</dt><dd>{{ web.pending_plans }}</dd>
+<dt>Approved domains</dt><dd>{{ web.approved_domains|join(', ') if web.approved_domains else 'None' }}</dd>
+<dt>Limits</dt><dd>{{ web.limits.maximum_pages }} pages, depth {{ web.limits.maximum_depth }}, {{ web.limits.timeout_seconds }} seconds</dd>
+<dt>robots.txt</dt><dd>{{ 'Enforced' if web.robots_enforced else 'Not enforced' }}</dd>
+<dt>Evidence / citations</dt><dd>{{ web.evidence_count }} / {{ web.citation_count }}</dd>
+<dt>Founder approval</dt><dd>{{ web.founder_approval_status.value }}</dd></dl>
+<h3>Adapters</h3><ul>{% for adapter in web.adapters %}<li>{{ adapter.kind.value }}: {{ 'available' if adapter.available else 'unavailable' }} — {{ adapter.reason }}</li>{% endfor %}</ul>
+<h3>Risk alerts</h3><ul>{% for alert in web.risk_alerts %}<li>{{ alert }}</li>{% endfor %}</ul></section>
+{% endblock %}

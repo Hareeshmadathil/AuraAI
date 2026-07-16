@@ -378,6 +378,14 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             extra_context={"connector": create_demo_service().status()},
         )
 
+    @router.get("/web-intelligence", response_class=HTMLResponse)
+    def web_intelligence_page(request: Request, service: DashboardServiceDependency) -> HTMLResponse:
+        """Render the offline founder-controlled web intelligence status."""
+        from web_intelligence.composition import create_offline_demo_service
+        return render(request=request,service=service,template_name="web_intelligence.html",
+            page_title="Web Intelligence",active_path="/web-intelligence",
+            extra_context={"web":create_offline_demo_service().dashboard_state()})
+
     @router.get("/artifacts/{artifact_id}")
     def render_artifact(
         artifact_id: UUID,
