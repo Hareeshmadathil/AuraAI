@@ -20,3 +20,22 @@ class NemotronTransportResponse(AuraBaseModel):
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     latency_ms: float = Field(default=0, ge=0)
+    http_status_class: str = Field(default="unknown", pattern=r"^(?:[1-5]xx|unknown)$")
+    final_answer_field: str = "payload"
+    safe_diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class NemotronResponseShape(AuraBaseModel):
+    """Content-free structural metadata for safe provider diagnostics."""
+
+    top_level_keys: list[str] = Field(default_factory=list)
+    choices_count: int = Field(default=0, ge=0)
+    message_keys: list[str] = Field(default_factory=list)
+    message_value_types: dict[str, str] = Field(default_factory=dict)
+    content_kind: str = "missing"
+    content_character_count: int = Field(default=0, ge=0)
+    reasoning_field_present: bool = False
+    reasoning_character_count: int = Field(default=0, ge=0)
+    finish_reason: str | None = None
+    usage: dict[str, int] = Field(default_factory=dict)
+    http_status_class: str = "unknown"

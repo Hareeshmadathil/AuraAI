@@ -1,8 +1,9 @@
 """NVIDIA Nemotron 3 Ultra adapter using the common Provider interface."""
 from __future__ import annotations
 from time import perf_counter
+from pydantic import ValidationError as PydanticValidationError
 from core import utc_now
-from providers.exceptions import ProviderUnavailableError
+from providers.exceptions import ProviderUnavailableError, ProviderValidationError
 from providers.models import ProviderCapability, ProviderDescriptor, ProviderHealth, ProviderKind, ProviderOutput, provider_output_model
 from providers.nemotron.config import NemotronConfig
 from providers.nemotron.models import NemotronRequest
@@ -23,10 +24,20 @@ class NemotronProvider:
         self.descriptor = ProviderDescriptor(name="nemotron", kind=ProviderKind.REMOTE, enabled=self.config.enabled,
             model=self.config.model, capabilities=SUPPORTED_NEMOTRON_CAPABILITIES)
         self._requests=0; self._successes=0; self._failures=0
+        self._last_safe_error_code: str | None = None
+        self._last_safe_diagnostics: dict[str, object] = {}
+        self._unhealthy = False
 
     def check_ready(self) -> None:
         if not self.config.live_ready:
             raise ProviderUnavailableError("Nemotron is unavailable; safe fallback remains active.", provider_name="nemotron", retryable=False)
+        if self._unhealthy:
+            raise ProviderUnavailableError(
+                "Nemotron is experimental and unhealthy for this router instance.",
+                provider_name="nemotron",
+                details={"safe_error_code": "PROVIDER_UNHEALTHY"},
+                retryable=False,
+            )
 
     def generate(self, capability: ProviderCapability, prompt: ProviderPrompt) -> ProviderResult[ProviderOutput]:
         self.check_ready()
@@ -36,19 +47,41 @@ class NemotronProvider:
             response_schema=provider_output_model(capability).model_json_schema(), maximum_output_tokens=self.config.maximum_output_tokens,
             temperature=self.config.temperature)
         started_at=utc_now(); started=perf_counter(); self._requests += 1
-        try: response=self.transport.send(request, timeout_seconds=self.config.timeout_seconds)
-        except Exception: self._failures += 1; raise
-        output=provider_output_model(capability).model_validate(response.payload); self._successes += 1
+        try:
+            response=self.transport.send(request, timeout_seconds=self.config.timeout_seconds)
+            output=provider_output_model(capability).model_validate(response.payload)
+        except PydanticValidationError as error:
+            self._failures += 1
+            self._unhealthy = True
+            self._last_safe_error_code = "SCHEMA_VALIDATION_FAILED"
+            raise ProviderValidationError("Nemotron final answer failed typed schema validation.",
+                provider_name="nemotron", details={"safe_error_code": "SCHEMA_VALIDATION_FAILED",
+                "validation_stage": "typed_schema", "schema_validation_started": True}, retryable=False) from error
+        except Exception as error:
+            self._failures += 1
+            self._unhealthy = True
+            self._last_safe_error_code = str(getattr(error, "details", {}).get("safe_error_code") or getattr(error, "error_code", "PROVIDER_ERROR"))
+            raise
+        self._successes += 1
+        self._last_safe_error_code = None
+        self._last_safe_diagnostics = dict(response.safe_diagnostics)
         usage=ProviderUsage(provider="nemotron", model=self.config.model, capability=capability,
             input_tokens=response.input_tokens, output_tokens=response.output_tokens,
             latency_ms=max(response.latency_ms,(perf_counter()-started)*1000), started_at=started_at, completed_at=utc_now())
         return ProviderResult(request_id=usage.request_id, provider="nemotron", model=self.config.model, output=output, usage=usage)
 
     def safe_health(self) -> ProviderHealth:
-        return ProviderHealth(name="nemotron", enabled=self.config.enabled, status="available" if self.config.live_ready else "not_ready",
+        status = "unhealthy" if self._unhealthy else ("available" if self.config.live_ready else "not_ready")
+        return ProviderHealth(name="nemotron", enabled=self.config.enabled, status=status,
             capabilities=sorted(SUPPORTED_NEMOTRON_CAPABILITIES,key=lambda value:value.value), configured=self.config.configured,
             live_requests_allowed=self.config.allow_live_requests, model=self.config.model, request_count=self._requests,
-            success_count=self._successes, failure_count=self._failures)
+            success_count=self._successes, failure_count=self._failures,
+            last_safe_error_code=self._last_safe_error_code,
+            details={
+                "structured_output_support": "experimental",
+                **self._last_safe_diagnostics,
+            })
 
     def record_fallback(self, safe_error_code: str | None = None, diagnostic: dict[str, object] | None = None) -> None:
-        del safe_error_code, diagnostic
+        self._last_safe_error_code = safe_error_code
+        self._last_safe_diagnostics.update(diagnostic or {})
