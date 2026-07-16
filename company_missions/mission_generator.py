@@ -15,6 +15,7 @@ from knowledge_manager.models import KnowledgeQuery
 from knowledge_manager.service import KnowledgeManagerService
 from mission_control import MissionControlService
 from mission_control.models import MissionDifficulty, MissionRecord, RiskLevel
+from web_intelligence.evidence_layer import EvidenceLayer
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,12 +38,14 @@ class MissionGenerator:
         intelligence_director: IntelligenceDirectorService,
         knowledge_manager: KnowledgeManagerService,
         ceo: AuraCEO,
+        evidence_layer: EvidenceLayer | None = None,
     ) -> None:
         self.control = control
         self.trend_hunter = trend_hunter
         self.intelligence_director = intelligence_director
         self.knowledge_manager = knowledge_manager
         self.ceo = ceo
+        self.evidence_layer = evidence_layer or EvidenceLayer()
 
     def generate(
         self,
@@ -56,7 +59,12 @@ class MissionGenerator:
         if not goal:
             raise ValueError("Founder goal is required.")
         self._review_goal(goal)
-        unique = self._unique_candidates(candidates or self._candidates(goal))
+        evidence = (
+            self.evidence_layer.from_candidates(candidates)
+            if candidates is not None
+            else self.evidence_layer.fixtures(goal)
+        )
+        unique = self._unique_candidates(self.evidence_layer.candidates(evidence))
         opportunities = self.trend_hunter.rank_candidates(unique)
         scored = self._score_with_intelligence(opportunities)
         novel = [
@@ -86,45 +94,6 @@ class MissionGenerator:
         decision = self.ceo.review_mission(executive)
         if decision.outcome.value != "approved":
             raise ValueError("CEO did not approve mission generation.")
-
-    @staticmethod
-    def _candidates(goal: str) -> list[TrendCandidate]:
-        prefix = goal.rstrip(". ")
-        return [
-            TrendCandidate(
-                name=f"{prefix}: practical education",
-                description="Create evidence-aware educational content.",
-                demand_score=78,
-                trend_velocity_score=70,
-                monetization_score=64,
-                competition_score=48,
-                production_difficulty_score=34,
-                evidence=["Founder goal", "Deterministic offline heuristic"],
-                risks=["Requires live validation before public claims"],
-            ),
-            TrendCandidate(
-                name=f"{prefix}: workflow case study",
-                description="Document one safe internal workflow case study.",
-                demand_score=70,
-                trend_velocity_score=62,
-                monetization_score=68,
-                competition_score=40,
-                production_difficulty_score=28,
-                evidence=["Founder goal", "Deterministic offline heuristic"],
-                risks=["Case-study evidence is not yet independently verified"],
-            ),
-            TrendCandidate(
-                name=f"{prefix}: founder briefing",
-                description="Produce a concise founder-controlled briefing.",
-                demand_score=58,
-                trend_velocity_score=55,
-                monetization_score=50,
-                competition_score=30,
-                production_difficulty_score=20,
-                evidence=["Founder goal"],
-                risks=["Lower external audience value"],
-            ),
-        ]
 
     @staticmethod
     def _unique_candidates(values: list[TrendCandidate]) -> list[TrendCandidate]:
@@ -223,7 +192,7 @@ class MissionGenerator:
             required_approvals=["approve_mission_zero_content"],
             success_criteria=["All offline stages complete", "Creative Quality completes", "Founder approval request is pending"],
             failure_criteria=["Any dependency fails", "Quality pipeline fails", "External operation is attempted"],
-            artifacts_expected=["trend opportunity", "intelligence result", "knowledge result", "research plan", "script", "production package", "quality package"],
+            artifacts_expected=["canonical evidence", "trend opportunity", "intelligence result", "knowledge result", "research plan", "script", "production package", "quality package"],
             mission_dependencies=["reviewed Mission Zero script-v2 package", "offline deterministic fixtures"],
             offline_execution=True,
             provider_requirements=["Provider Router composed with unavailable transports", "No provider request"],
@@ -231,7 +200,7 @@ class MissionGenerator:
             rendering_required=False,
             confidence=round((selected.intelligence_score / 100 + opportunity.opportunity_score / 100) / 2, 4),
             mission_score=score,
-            reasoning_summary=f"Selected from deduplicated Trend Hunter opportunities using 60% trend score and 40% Intelligence Director priority. Knowledge Manager found no exact prior mission titled '{opportunity.name}'.",
+            reasoning_summary=f"Selected from deduplicated, authority- and freshness-ranked canonical evidence using 60% Trend Hunter opportunity score and 40% Intelligence Director priority. Contradictions remain explicit in evidence risks. Knowledge Manager found no exact prior mission titled '{opportunity.name}'.",
             founder_owner="Hareesh",
             founder_goal=goal,
         )
