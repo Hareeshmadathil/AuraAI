@@ -136,6 +136,7 @@ class ArtifactRecord(AuraBaseModel):
     content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     version: int = Field(default=1, ge=1)
     provenance: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     approval_state: ArtifactApprovalState = ArtifactApprovalState.PENDING
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -198,4 +199,8 @@ class MissionControlProjection(AuraBaseModel):
     blocked_tasks: list[TaskRecord]
     recent_events: list[EventRecord]
     artifacts: list[ArtifactRecord]
+    recent_mission_outcomes: list[dict[str, Any]] = Field(default_factory=list)
+    generated_lessons: list[dict[str, Any]] = Field(default_factory=list)
+    pending_lesson_approvals: list[dict[str, Any]] = Field(default_factory=list)
+    lesson_influences: list[str] = Field(default_factory=list)
     system_health: str

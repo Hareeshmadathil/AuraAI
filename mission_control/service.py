@@ -9,7 +9,7 @@ from uuid import UUID
 
 from core import utc_now
 from mission_control.models import (
-    ApprovalRequest, ApprovalState, ArtifactRecord, DepartmentCommand, DepartmentResult,
+    ApprovalRequest, ApprovalState, ArtifactApprovalState, ArtifactRecord, DepartmentCommand, DepartmentResult,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
     RiskLevel, TaskRecord, TaskStatus,
 )
@@ -68,6 +68,7 @@ class MissionControlService:
         location: str,
         value: object,
         provenance: dict[str, object],
+        approval_state: ArtifactApprovalState = ArtifactApprovalState.PENDING,
     ) -> ArtifactRecord:
         """Register a deterministic logical artifact produced by one task."""
 
@@ -81,6 +82,8 @@ class MissionControlService:
             location=location,
             content_hash=hashlib.sha256(payload.encode("utf-8")).hexdigest(),
             provenance=provenance,
+            metadata=value if isinstance(value, dict) else {"value": str(value)},
+            approval_state=approval_state,
         )
         self.repository.save_artifact(artifact)
         self._event(
@@ -184,7 +187,12 @@ class MissionControlService:
 
     def projection(self) -> MissionControlProjection:
         tasks=self.repository.list_tasks(); approvals=self.repository.list_approvals()
-        return MissionControlProjection(missions=self.repository.list_missions(),pending_approvals=[a for a in approvals if a.state==ApprovalState.PENDING],blocked_tasks=[t for t in tasks if t.status in {TaskStatus.BLOCKED,TaskStatus.APPROVAL_REQUIRED}],recent_events=self.repository.list_events()[-50:],artifacts=self.repository.list_artifacts(),system_health="operational")
+        artifacts = self.repository.list_artifacts()
+        outcomes = [item.metadata for item in artifacts if item.artifact_type == "mission_learning.outcome"]
+        lessons = [item.metadata for item in artifacts if item.artifact_type == "mission_learning.lesson"]
+        pending_lessons = [item.metadata for item in artifacts if item.artifact_type == "mission_learning.lesson" and item.approval_state == ArtifactApprovalState.PENDING]
+        influences = [mission.reasoning_summary for mission in self.repository.list_missions() if "Mission lessons changed" in mission.reasoning_summary]
+        return MissionControlProjection(missions=self.repository.list_missions(),pending_approvals=[a for a in approvals if a.state==ApprovalState.PENDING],blocked_tasks=[t for t in tasks if t.status in {TaskStatus.BLOCKED,TaskStatus.APPROVAL_REQUIRED}],recent_events=self.repository.list_events()[-50:],artifacts=artifacts,recent_mission_outcomes=outcomes,generated_lessons=lessons,pending_lesson_approvals=pending_lessons,lesson_influences=influences,system_health="operational")
 
     def _event(self,event_type,mission_id=None,task_id=None,payload=None): return self.repository.append_event(EventRecord(event_type=event_type,mission_id=mission_id,task_id=task_id,payload=payload or {}))
     def _mission(self,i):

@@ -16,6 +16,7 @@ from knowledge_manager.service import KnowledgeManagerService
 from mission_control import MissionControlService
 from mission_control.models import MissionDifficulty, MissionRecord, RiskLevel
 from web_intelligence.evidence_layer import EvidenceLayer
+from analytics.mission_learning import LessonInfluence, MissionLearningService
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +77,11 @@ class MissionGenerator:
             novel,
             key=lambda item: (-item.mission_score, item.opportunity.name.casefold()),
         )[0]
-        mission = self._mission(goal, selected)
+        influence = MissionLearningService(
+            control=self.control,
+            knowledge_manager=self.knowledge_manager,
+        ).influence()
+        mission = self._mission(goal, selected, influence)
         return self.control.create_mission(mission)
 
     def _review_goal(self, goal: str) -> None:
@@ -154,8 +159,15 @@ class MissionGenerator:
         )
 
     @staticmethod
-    def _mission(goal: str, selected: ScoredOpportunity) -> MissionRecord:
-        score = selected.mission_score
+    def _mission(
+        goal: str,
+        selected: ScoredOpportunity,
+        lesson_influence: LessonInfluence,
+    ) -> MissionRecord:
+        score = round(
+            max(0.0, min(100.0, selected.mission_score + lesson_influence.score_delta)),
+            2,
+        )
         priority = (
             TaskPriority.HIGH
             if score >= 70
@@ -198,9 +210,23 @@ class MissionGenerator:
             provider_requirements=["Provider Router composed with unavailable transports", "No provider request"],
             publishing_required=False,
             rendering_required=False,
-            confidence=round((selected.intelligence_score / 100 + opportunity.opportunity_score / 100) / 2, 4),
+            confidence=round(
+                max(
+                    0.0,
+                    min(
+                        1.0,
+                        (
+                            selected.intelligence_score / 100
+                            + opportunity.opportunity_score / 100
+                        )
+                        / 2
+                        + lesson_influence.confidence_delta,
+                    ),
+                ),
+                4,
+            ),
             mission_score=score,
-            reasoning_summary=f"Selected from deduplicated, authority- and freshness-ranked canonical evidence using 60% Trend Hunter opportunity score and 40% Intelligence Director priority. Contradictions remain explicit in evidence risks. Knowledge Manager found no exact prior mission titled '{opportunity.name}'.",
+            reasoning_summary=f"Selected from deduplicated, authority- and freshness-ranked canonical evidence using 60% Trend Hunter opportunity score and 40% Intelligence Director priority. Contradictions remain explicit in evidence risks. Knowledge Manager found no exact prior mission titled '{opportunity.name}'. Mission lessons changed the score by {lesson_influence.score_delta:+.2f}: {'; '.join(lesson_influence.explanations) if lesson_influence.explanations else 'no approved current lesson applied'}.",
             founder_owner="Hareesh",
             founder_goal=goal,
         )
