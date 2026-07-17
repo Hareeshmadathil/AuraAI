@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block heading %}Founder Mission Review{% endblock %}
+{% block content %}
+<section class="panel approval-panel">
+    <p class="eyebrow">Canonical Mission Control record</p>
+    <h2>{{ review.mission.title }}</h2>
+    <div class="pilot-safety-labels" aria-label="Safety boundaries">
+        <strong>LOCAL ONLY</strong><strong>OFFLINE</strong><strong>NO PROVIDERS</strong>
+        <strong>NO RENDER</strong><strong>NO UPLOAD</strong><strong>NO PUBLISH</strong>
+    </div>
+    <dl class="review-notes">
+        <div><dt>Mission ID</dt><dd class="compact-value">{{ review.mission.mission_id }}</dd></div>
+        <div><dt>Status</dt><dd>{{ review.mission.status.value | status_label }}</dd></div>
+        <div><dt>Founder goal</dt><dd>{{ review.mission.founder_goal }}</dd></div>
+        <div><dt>Objective</dt><dd>{{ review.mission.objective }}</dd></div>
+        <div><dt>Expected</dt><dd>{{ review.mission.expected_outcome }}</dd></div>
+        <div><dt>Score</dt><dd>{{ '%.2f' | format(review.mission.mission_score) }}</dd></div>
+        <div><dt>Priority</dt><dd>{{ review.mission.priority.value | status_label }}</dd></div>
+        <div><dt>Approvals</dt><dd>{{ review.mission.required_approvals | join(', ') or 'None declared' }}</dd></div>
+        <div><dt>Execution</dt><dd>offline={{ review.mission.offline_execution }}, providers={{ review.mission.provider_requirements | join(', ') }}, render={{ review.mission.rendering_required }}, publish={{ review.mission.publishing_required }}</dd></div>
+    </dl>
+</section>
+
+<div class="dashboard-grid">
+    <section class="panel panel-wide">
+        <h2>Mission timeline</h2>
+        <ol class="timeline-list">
+        {% for event in review.timeline %}
+            <li><strong>{{ event.sequence }} · {{ event.event_type }}</strong><span>{{ event.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') }}</span></li>
+        {% else %}<li>No persisted events.</li>{% endfor %}
+        </ol>
+    </section>
+    <section class="panel">
+        <h2>Tasks</h2>
+        <ul class="clean-list">
+        {% for task in review.tasks %}
+            <li><strong>{{ task.title }}</strong> — {{ task.status.value | status_label }}{% if task.blocking_reason %}<br><small>{{ task.blocking_reason }}</small>{% endif %}</li>
+        {% else %}<li>No persisted tasks.</li>{% endfor %}
+        </ul>
+    </section>
+    <section class="panel">
+        <h2>Artifacts</h2>
+        <ul class="clean-list">
+        {% for artifact in review.artifacts %}
+            <li><strong>{{ artifact.artifact_type }}</strong><br><code class="compact-value">SHA-256 {{ artifact.content_hash }}</code><br><small>Version {{ artifact.version }} · {{ artifact.approval_state.value | status_label }}</small></li>
+        {% else %}<li>No persisted artifacts.</li>{% endfor %}
+        </ul>
+    </section>
+    <section class="panel">
+        <h2>Evidence and citations</h2>
+        <ul class="clean-list">
+        {% for evidence in review.evidence %}
+            <li><strong>{{ evidence.label }}</strong><br><span class="compact-value">{{ evidence.value }}</span></li>
+        {% else %}<li>No separately cited evidence reference is present in persisted artifact provenance.</li>{% endfor %}
+        </ul>
+    </section>
+    <section class="panel">
+        <h2>Creative Quality</h2>
+        {% if review.creative_quality %}
+        <dl class="review-notes">
+        {% for key, value in review.creative_quality.items() %}<div><dt>{{ key }}</dt><dd class="compact-value">{{ value }}</dd></div>{% endfor %}
+        </dl>
+        {% else %}<p>No Creative Quality summary is persisted.</p>{% endif %}
+    </section>
+    <section class="panel panel-wide">
+        <h2>Mission learning</h2>
+        {% if review.lesson_influence %}<p>{{ review.lesson_influence }}</p>{% endif %}
+        <ul class="clean-list">
+        {% for lesson in review.lessons %}
+            <li><strong>{{ lesson.get('category', 'lesson') | status_label }}</strong> — {{ lesson.get('observation', 'No observation') }}<br><small>Confidence {{ lesson.get('confidence', 0) }} · {{ lesson.get('affected_subsystem', 'unknown') }}</small></li>
+        {% else %}<li>No mission lessons are persisted for this mission.</li>{% endfor %}
+        </ul>
+    </section>
+</div>
+
+<section class="panel approval-panel">
+    <h2>Founder decision</h2>
+    {% if review.approval %}
+    <dl class="review-notes">
+        <div><dt>Request ID</dt><dd class="compact-value">{{ review.approval.approval_id }}</dd></div>
+        <div><dt>Action</dt><dd>{{ review.approval.requested_action }}</dd></div>
+        <div><dt>Hash</dt><dd><code class="compact-value">{{ review.approval.content_hash }}</code></dd></div>
+        <div><dt>Expires</dt><dd>{{ review.approval.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</dd></div>
+        <div><dt>State</dt><dd>{{ review.approval.state.value | status_label }}</dd></div>
+        {% if review.approval.reason %}<div><dt>Reason</dt><dd>{{ review.approval.reason }}</dd></div>{% endif %}
+    </dl>
+    {% if review.approval.state.value == 'pending' %}
+    <form method="post" action="/missions/{{ review.mission.mission_id }}/review/decision" class="founder-decision-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="approval_id" value="{{ review.approval.approval_id }}">
+        <input type="hidden" name="task_id" value="{{ review.approval.task_id }}">
+        <input type="hidden" name="requested_action" value="{{ review.approval.requested_action }}">
+        <input type="hidden" name="content_hash" value="{{ review.approval.content_hash }}">
+        <label for="founder-reason">Founder reason</label>
+        <textarea id="founder-reason" name="reason" minlength="1" maxlength="2000" required></textarea>
+        <div class="founder-actions">
+            <button type="submit" name="decision" value="approved">Approve exact request</button>
+            <button type="submit" name="decision" value="revision_requested">Request revision</button>
+            <button type="submit" name="decision" value="rejected">Reject</button>
+        </div>
+    </form>
+    {% else %}<p>This request is closed. Duplicate or replacement decisions are rejected by Mission Control.</p>{% endif %}
+    {% else %}<p>No approval request exists for this mission.</p>{% endif %}
+    <p class="legal-note">Local single-founder boundary: possession of local machine access and the CSRF-bound form constitutes founder presence. This does not provide multi-user authentication and grants no rendering or publishing authority.</p>
+</section>
+{% endblock %}

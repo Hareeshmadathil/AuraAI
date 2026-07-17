@@ -355,6 +355,11 @@ code { font-family: var(--font-mono); font-size: 0.9em; color: var(--color-info)
 .clean-list, .timeline-list { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding-left: var(--space-5); }
 .timeline-list li { display: grid; gap: var(--space-1); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
 .timeline-list span, .timeline-list small { color: var(--muted); }
+.founder-decision-form { display: grid; gap: var(--space-3); margin-top: var(--space-5); }
+.founder-decision-form textarea { min-height: 7rem; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--color-bg-canvas); color: var(--text); }
+.founder-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.founder-actions button { min-height: var(--control-min-height); padding: var(--space-2) var(--space-4); border: 1px solid var(--color-founder-action); border-radius: var(--radius-sm); background: transparent; color: var(--color-founder-action); font-weight: 700; cursor: pointer; }
+.founder-actions button:hover, .founder-actions button:focus-visible { background: var(--color-founder-action); color: var(--color-bg-canvas); }
 
 @media (max-width: 800px) {
     .sidebar { position: static; width: auto; height: auto; overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); }

@@ -3,18 +3,37 @@
 from __future__ import annotations
 
 from pathlib import Path
+import secrets
 from typing import Annotated
+from urllib.parse import parse_qs
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.dashboard.brand_models import create_brand_review, status_label
 from app.dashboard.models import DashboardSnapshot
 from app.dashboard.service import DashboardService
 from production_research.service import ProductionResearchService
 from mission_control.models import MissionControlProjection
+from mission_control.models import ApprovalState
+from app.dashboard.founder_review import build_founder_review
+
+
+class FounderDecisionForm(BaseModel):
+    """Strict hash-bound local founder mutation payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    csrf_token: str = Field(min_length=32, max_length=200)
+    approval_id: UUID
+    task_id: UUID
+    requested_action: str = Field(min_length=1, max_length=150)
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    decision: ApprovalState
+    reason: str = Field(min_length=1, max_length=2000)
 
 
 def get_dashboard_service(request: Request) -> DashboardService:
@@ -47,6 +66,17 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
     router = APIRouter()
     templates = Jinja2Templates(directory=template_directory)
     templates.env.filters["status_label"] = status_label
+
+    def mission_control(request: Request):
+        control = request.app.state.mission_control_service
+        if control is None:
+            raise HTTPException(status_code=503, detail="Mission Control is not configured.")
+        return control
+
+    def require_local(request: Request) -> None:
+        host = request.client.host if request.client else ""
+        if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+            raise HTTPException(status_code=403, detail="Founder review is local-only.")
 
     def render(
         *,
@@ -131,6 +161,89 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             page_title="Missions",
             active_path="/missions",
             extra_context={"collection_kind": "missions"},
+        )
+
+    @router.get("/missions/{mission_id}/review", response_class=HTMLResponse)
+    def founder_review_page(
+        mission_id: UUID,
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render one canonical Mission Control mission for local review."""
+
+        require_local(request)
+        try:
+            review = build_founder_review(mission_control(request), mission_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="Mission was not found.") from error
+        csrf_token = secrets.token_urlsafe(32)
+        response = render(
+            request=request,
+            service=service,
+            template_name="founder_review.html",
+            page_title="Founder Mission Review",
+            active_path="/missions",
+            extra_context={"review": review, "csrf_token": csrf_token},
+        )
+        response.set_cookie(
+            "auraai_csrf",
+            csrf_token,
+            httponly=True,
+            samesite="strict",
+            secure=False,
+            max_age=1800,
+        )
+        return response
+
+    @router.post("/missions/{mission_id}/review/decision")
+    async def founder_review_decision(
+        mission_id: UUID,
+        request: Request,
+    ) -> RedirectResponse:
+        """Apply a POST-only, CSRF-protected, exact-bound founder decision."""
+
+        require_local(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(status_code=415, detail="Unsupported form content type.")
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Founder decision form is too large.")
+        try:
+            values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True)
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form = FounderDecisionForm.model_validate(
+                {key: value[0] for key, value in values.items()}
+            )
+        except (UnicodeDecodeError, ValueError, ValidationError) as error:
+            raise HTTPException(status_code=422, detail="Invalid founder decision form.") from error
+        cookie_token = request.cookies.get("auraai_csrf", "")
+        if not cookie_token or not secrets.compare_digest(cookie_token, form.csrf_token):
+            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+        if form.decision not in {
+            ApprovalState.APPROVED,
+            ApprovalState.REJECTED,
+            ApprovalState.REVISION_REQUESTED,
+        }:
+            raise HTTPException(status_code=422, detail="Invalid founder decision.")
+        try:
+            mission_control(request).apply_founder_decision(
+                form.approval_id,
+                form.decision,
+                mission_id=mission_id,
+                task_id=form.task_id,
+                requested_action=form.requested_action,
+                content_hash=form.content_hash,
+                reason=form.reason,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="Mission review record was not found.") from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return RedirectResponse(
+            url=f"/missions/{mission_id}/review",
+            status_code=303,
         )
 
     @router.get("/workflows", response_class=HTMLResponse)
@@ -469,12 +582,6 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
     def mission_control_api(request: Request) -> MissionControlProjection:
         """Return the injected authoritative Mission Control projection."""
 
-        control = request.app.state.mission_control_service
-        if control is None:
-            raise HTTPException(
-                status_code=503,
-                detail="Mission Control is not configured.",
-            )
-        return control.projection()
+        return mission_control(request).projection()
 
     return router
