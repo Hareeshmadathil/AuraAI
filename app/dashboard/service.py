@@ -43,6 +43,8 @@ from analytics.models import AnalyticsReport, LearningReport
 from distribution.models import DistributionPackage
 from providers.models import ProviderState
 from mission_control.service import MissionControlService
+from mission_control.models import MissionControlStatus
+from app.dashboard.mission_projection import MissionControlDashboardReader
 
 
 class DashboardService:
@@ -97,6 +99,11 @@ class DashboardService:
         self._first_content_mission = first_content_mission
         self._private_video_production = private_video_production
         self._mission_control_service = mission_control_service
+        self._mission_reader = (
+            MissionControlDashboardReader(mission_control_service)
+            if mission_control_service is not None
+            else None
+        )
 
     @property
     def mission_control_service(self) -> MissionControlService | None:
@@ -111,10 +118,14 @@ class DashboardService:
             self._summarize_employee(employee)
             for employee in self._employees
         ]
-        missions = [
-            self._summarize_mission(mission)
-            for mission in self._missions
-        ]
+        missions = (
+            self._mission_reader.list_missions()
+            if self._mission_reader is not None
+            else [
+                self._summarize_mission(mission)
+                for mission in self._missions
+            ]
+        )
         sorted_decisions = sorted(
             self._decisions,
             key=lambda item: item.created_at,
@@ -443,6 +454,11 @@ class DashboardService:
             MissionExecutionStatus.SEO,
             MissionExecutionStatus.SCRIPT,
             MissionExecutionStatus.FOUNDER_REVIEW,
+            MissionControlStatus.CREATED,
+            MissionControlStatus.READY,
+            MissionControlStatus.RUNNING,
+            MissionControlStatus.APPROVAL_REQUIRED,
+            MissionControlStatus.PAUSED,
         }
         return sum(mission.status in active_statuses for mission in missions)
 

@@ -29,3 +29,16 @@ application is created once when the ASGI server first uses it.
 The legacy `RuntimeOrchestrator` and `RuntimeStateManager` remain available for
 compatibility and read projections. They are not constructed as mission
 authorities by the normal composition root.
+
+## Mission dashboard reads
+
+The normal `DashboardService` owns no mission collection. On every snapshot it
+uses `MissionControlDashboardReader`, which calls read-only query methods on the
+same application-scoped `MissionControlService`. A transition is therefore
+visible on the next dashboard request without synchronization or copied state.
+
+Normal composition no longer constructs `RuntimeStateManager`. Legacy callers
+may still inject it into `create_runtime_dashboard_service` for employee,
+workflow, provider, health, and other non-authoritative runtime projections.
+When Mission Control is supplied to the legacy dashboard adapter, runtime
+snapshot missions are explicitly ignored.

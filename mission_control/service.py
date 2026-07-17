@@ -35,6 +35,42 @@ class MissionControlService:
     def __init__(self, repository: MissionControlRepository) -> None:
         self.repository = repository
 
+    def get_mission(self, mission_id: UUID) -> MissionRecord | None:
+        """Return one authoritative mission without mutating state."""
+
+        return self.repository.get_mission(mission_id)
+
+    def list_missions(self) -> list[MissionRecord]:
+        """Return authoritative missions for read-only consumers."""
+
+        return self.repository.list_missions()
+
+    def list_tasks(self, mission_id: UUID | None = None) -> list[TaskRecord]:
+        """Return canonical tasks for a mission or the whole repository."""
+
+        return self.repository.list_tasks(mission_id)
+
+    def list_artifacts(
+        self,
+        mission_id: UUID | None = None,
+    ) -> list[ArtifactRecord]:
+        """Return canonical artifacts for read-only consumers."""
+
+        return self.repository.list_artifacts(mission_id)
+
+    def list_approvals(
+        self,
+        mission_id: UUID | None = None,
+    ) -> list[ApprovalRequest]:
+        """Return canonical approvals for read-only consumers."""
+
+        return self.repository.list_approvals(mission_id)
+
+    def list_events(self, mission_id: UUID | None = None) -> list[EventRecord]:
+        """Return the canonical ordered event stream without mutation."""
+
+        return self.repository.list_events(mission_id)
+
     def create_mission(self, mission: MissionRecord) -> MissionRecord:
         self.repository.save_mission(mission)
         self._event("mission.created", mission.mission_id)

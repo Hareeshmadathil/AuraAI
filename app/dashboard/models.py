@@ -25,6 +25,7 @@ from analytics.models import AnalyticsReport, LearningReport
 from distribution.models import DistributionPackage
 from mission_engine.models import MissionExecutionStatus
 from providers.models import ProviderState
+from mission_control.models import MissionControlStatus
 
 
 class DashboardMode(StrEnum):
@@ -116,7 +117,7 @@ class MissionStatusSummary(AuraBaseModel):
     mission_id: UUID
     title: str
     description: str = ""
-    status: MissionStatus | MissionExecutionStatus
+    status: MissionStatus | MissionExecutionStatus | MissionControlStatus
     priority: TaskPriority
     lead_department: DepartmentName | None = None
     progress_percentage: float = Field(ge=0.0, le=100.0)

@@ -53,7 +53,7 @@ def create_dashboard_service_from_runtime(
     """Create an injected dashboard service from one runtime snapshot."""
 
     employees = _merge_employees(runtime_snapshot, company_roster)
-    missions = [
+    missions = [] if mission_control_service is not None else [
         MissionStatusSummary(
             mission_id=mission.mission_id,
             title=mission.title,

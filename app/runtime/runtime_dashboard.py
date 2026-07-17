@@ -24,6 +24,13 @@ def create_runtime_dashboard_service(
     """
 
     selected_roster = roster or create_company_roster()
+    if mission_control_service is not None and state_manager is None:
+        return DashboardService(
+            mode=DashboardMode.INJECTED,
+            data_label="LOCAL RUNTIME STATE",
+            employees=selected_roster.employees,
+            mission_control_service=mission_control_service,
+        )
     runtime = state_manager or RuntimeStateManager(RuntimeEventBus())
     if runtime.mode.value == "stopped":
         runtime.start_runtime()

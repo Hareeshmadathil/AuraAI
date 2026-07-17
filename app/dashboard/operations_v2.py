@@ -86,10 +86,9 @@ class DashboardOperationsProjection(AuraBaseModel):
 def build_operations_projection(control: MissionControlService) -> DashboardOperationsProjection:
     """Derive the complete operations view without storing parallel state."""
 
-    repository = control.repository
-    missions = repository.list_missions()
-    artifacts = repository.list_artifacts()
-    approvals = repository.list_approvals()
+    missions = control.list_missions()
+    artifacts = control.list_artifacts()
+    approvals = control.list_approvals()
     artifact_types = [item.artifact_type.casefold() for item in artifacts]
     active_states = {
         MissionControlStatus.CREATED, MissionControlStatus.READY,
@@ -113,7 +112,7 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
     return DashboardOperationsProjection(
         summary=summary,
         missions=operations,
-        activity=repository.list_events()[-30:][::-1],
+        activity=control.list_events()[-30:][::-1],
         attention=_attention(missions, approvals),
         systems=_systems(),
         capabilities=[
@@ -133,13 +132,12 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
 
 
 def _mission_view(control: MissionControlService, mission_id: UUID) -> MissionOperationsView:
-    repository = control.repository
-    mission = repository.get_mission(mission_id)
+    mission = control.get_mission(mission_id)
     if mission is None:
         raise KeyError(mission_id)
-    tasks = repository.list_tasks(mission_id)
-    artifacts = repository.list_artifacts(mission_id)
-    approvals = repository.list_approvals(mission_id)
+    tasks = control.list_tasks(mission_id)
+    artifacts = control.list_artifacts(mission_id)
+    approvals = control.list_approvals(mission_id)
     completed = sum(task.status.value == "completed" for task in tasks)
     progress = round(completed / len(tasks) * 100) if tasks else 0
     types = {item.artifact_type.casefold() for item in artifacts}

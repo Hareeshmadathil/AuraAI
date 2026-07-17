@@ -44,12 +44,12 @@ def build_founder_review(
 ) -> FounderReviewProjection:
     """Build a review directly from the authoritative repository."""
 
-    mission = control.repository.get_mission(mission_id)
+    mission = control.get_mission(mission_id)
     if mission is None:
         raise KeyError("Mission was not found.")
-    tasks = control.repository.list_tasks(mission_id)
-    artifacts = control.repository.list_artifacts(mission_id)
-    approvals = control.repository.list_approvals(mission_id)
+    tasks = control.list_tasks(mission_id)
+    artifacts = control.list_artifacts(mission_id)
+    approvals = control.list_approvals(mission_id)
     approval = max(approvals, key=lambda item: item.issued_at) if approvals else None
     evidence: dict[tuple[str, str], EvidenceReference] = {}
     quality: dict[str, Any] = {}
@@ -70,7 +70,7 @@ def build_founder_review(
         mission=mission,
         tasks=tasks,
         artifacts=artifacts,
-        timeline=control.repository.list_events(mission_id),
+        timeline=control.list_events(mission_id),
         approval=approval,
         evidence=list(evidence.values()),
         creative_quality=quality,
