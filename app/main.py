@@ -70,6 +70,14 @@ def create_demo_app() -> FastAPI:
     return create_app(mode=DashboardMode.DEMO)
 
 
+def create_runtime_app() -> FastAPI:
+    """Create the normal local runtime dashboard with the canonical roster."""
+
+    from app.runtime.runtime_dashboard import create_runtime_dashboard_service
+
+    return create_app(dashboard_service=create_runtime_dashboard_service())
+
+
 def create_niche_discovery_demo_app() -> FastAPI:
     """Create the deterministic niche-discovery demonstration app."""
 
@@ -207,4 +215,4 @@ def create_knowledge_manager_demo_app() -> FastAPI:
     return create_app(mode=DashboardMode.DEMO)
 
 
-app = create_app()
+app = create_runtime_app()
