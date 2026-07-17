@@ -161,7 +161,15 @@ class MissionControlService:
         running = task.model_copy(update={"status": TaskStatus.RUNNING, "attempts": task.attempts + 1, "updated_at": utc_now()})
         self._update_task(running)
         self._event("task.dispatched", task.mission_id, task.task_id, {"attempt": running.attempts})
-        return DepartmentCommand(mission_id=task.mission_id, task_id=task.task_id, department=task.department, operation=task.title, idempotency_key=task.idempotency_key)
+        return DepartmentCommand(
+            mission_id=task.mission_id,
+            task_id=task.task_id,
+            department=task.department,
+            assigned_agent_id=task.assigned_agent_id,
+            operation=task.title,
+            payload=task.payload,
+            idempotency_key=task.idempotency_key,
+        )
 
     def accept_result(self, result: DepartmentResult) -> TaskRecord:
         task = self._task(result.task_id)

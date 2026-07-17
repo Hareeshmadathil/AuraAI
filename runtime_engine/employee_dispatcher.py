@@ -57,6 +57,19 @@ class EmployeeDispatcher:
                 employee.clear_current_task()
 
     def _select_employee(self, command: DepartmentCommand) -> BaseEmployee:
+        if command.assigned_agent_id is not None:
+            employee = self._registry.get(command.assigned_agent_id)
+            if employee.department != command.department:
+                raise AgentError(
+                    "Assigned employee belongs to a different department.",
+                    details={"agent_id": str(employee.agent_id)},
+                )
+            if not employee.can_accept_task:
+                raise AgentError(
+                    "Assigned employee is not available.",
+                    agent_name=employee.name,
+                )
+            return employee
         available = self._registry.list_available(department=command.department)
         if not available:
             raise AgentError(

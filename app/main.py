@@ -16,6 +16,7 @@ from app.dashboard.service import DashboardService
 from production_research.service import ProductionResearchService
 from mission_control.service import MissionControlService
 from runtime_engine.runtime_manager import MissionRuntimeManager
+from app.runtime.mission_commands import MissionCommandService
 
 
 def create_app(
@@ -25,6 +26,7 @@ def create_app(
     production_research_service: ProductionResearchService | None = None,
     mission_control_service: MissionControlService | None = None,
     runtime_manager: MissionRuntimeManager | None = None,
+    mission_command_service: MissionCommandService | None = None,
 ) -> FastAPI:
     """Create and configure the local AuraAI dashboard application.
 
@@ -71,8 +73,16 @@ def create_app(
         raise ValueError(
             "Dashboard service and application must share Mission Control."
         )
+    if (
+        mission_command_service is not None
+        and mission_command_service.runtime_manager is not runtime_manager
+    ):
+        raise ValueError(
+            "Mission commands and application must share the runtime manager."
+        )
     application.state.mission_control_service = mission_control_service
     application.state.runtime_manager = runtime_manager
+    application.state.mission_command_service = mission_command_service
     application.mount(
         "/static",
         StaticFiles(directory=dashboard_root / "static"),
@@ -112,6 +122,7 @@ def create_runtime_app(
         dashboard_service=services.dashboard_service,
         mission_control_service=services.mission_control_service,
         runtime_manager=services.runtime_manager,
+        mission_command_service=services.mission_command_service,
     )
     application.state.runtime_services = services
     return application

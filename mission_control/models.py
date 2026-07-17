@@ -109,6 +109,7 @@ class TaskRecord(AuraBaseModel):
     retry_delay_seconds: int = Field(default=0, ge=0, le=86400)
     blocking_reason: str | None = Field(default=None, max_length=2000)
     idempotency_key: str = Field(min_length=1, max_length=200)
+    payload: dict[str, Any] = Field(default_factory=dict)
     consequential: bool = False
     required_action: str | None = Field(default=None, max_length=150)
     required_artifact_hash: str | None = Field(
@@ -179,6 +180,7 @@ class DepartmentCommand(AuraBaseModel):
     mission_id: UUID
     task_id: UUID
     department: DepartmentName
+    assigned_agent_id: UUID | None = None
     operation: str = Field(min_length=1, max_length=150)
     payload: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = Field(min_length=1, max_length=200)

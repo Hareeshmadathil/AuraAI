@@ -21,6 +21,11 @@ from mission_control.models import MissionControlProjection
 from mission_control.models import ApprovalState
 from app.dashboard.founder_review import build_founder_review
 from app.dashboard.operations_v2 import build_operations_projection
+from app.runtime.mission_commands import (
+    MissionCommandService,
+    RunNextTaskResult,
+)
+from mission_control.models import MissionRecord
 
 
 class FounderDecisionForm(BaseModel):
@@ -77,6 +82,15 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
     def operations(request: Request):
         control = request.app.state.mission_control_service
         return build_operations_projection(control) if control is not None else None
+
+    def mission_commands(request: Request) -> MissionCommandService:
+        commands = request.app.state.mission_command_service
+        if commands is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Mission commands are not configured.",
+            )
+        return commands
 
     def require_local(request: Request) -> None:
         host = request.client.host if request.client else ""
@@ -592,5 +606,40 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
         """Return the injected authoritative Mission Control projection."""
 
         return mission_control(request).projection()
+
+    @router.post(
+        "/api/missions",
+        response_model=MissionRecord,
+        status_code=201,
+    )
+    def submit_mission(
+        mission: MissionRecord,
+        request: Request,
+    ) -> MissionRecord:
+        """Submit a mission through the shared authoritative runtime."""
+
+        require_local(request)
+        try:
+            return mission_commands(request).submit(mission)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @router.post(
+        "/api/missions/{mission_id}/run-next",
+        response_model=RunNextTaskResult,
+    )
+    def run_next_mission_task(
+        mission_id: UUID,
+        request: Request,
+    ) -> RunNextTaskResult:
+        """Execute only Mission Control's next eligible mission task."""
+
+        require_local(request)
+        try:
+            return mission_commands(request).run_next(mission_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     return router

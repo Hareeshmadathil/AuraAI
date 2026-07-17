@@ -96,13 +96,17 @@ def test_attention_activity_and_system_status_are_honest(operations_context):
     assert "Gemini" not in text and "ElevenLabs" not in text and "HeyGen" not in text
 
 
-def test_operations_v2_adds_no_mutation_route(operations_context):
+def test_only_authoritative_mutation_routes_are_exposed(operations_context):
     _, app, _, _ = operations_context
     mutation_paths = {
         path for path, methods in app.openapi()["paths"].items()
         if "post" in methods
     }
-    assert mutation_paths == {"/missions/{mission_id}/review/decision"}
+    assert mutation_paths == {
+        "/api/missions",
+        "/api/missions/{mission_id}/run-next",
+        "/missions/{mission_id}/review/decision",
+    }
 
 
 def test_projection_performs_no_external_operation(operations_context, monkeypatch):

@@ -42,3 +42,26 @@ may still inject it into `create_runtime_dashboard_service` for employee,
 workflow, provider, health, and other non-authoritative runtime projections.
 When Mission Control is supplied to the legacy dashboard adapter, runtime
 snapshot missions are explicitly ignored.
+
+## Normal mission commands
+
+Normal mission mutations enter through `MissionCommandService`, which is a
+thin application adapter over the one composition-root `MissionRuntimeManager`.
+Mission submission calls `MissionRuntimeManager.create_mission`, which delegates
+to Mission Control. Run-next calls `MissionRuntimeManager.run_next`; Mission
+Control validates lifecycle state and task eligibility before the shared
+`EmployeeDispatcher` executes anything.
+
+```text
+POST /api/missions
+  -> MissionCommandService -> MissionRuntimeManager -> MissionControlService
+
+POST /api/missions/{mission_id}/run-next
+  -> MissionCommandService -> MissionRuntimeManager
+      -> MissionControl scheduling -> EmployeeDispatcher -> Mission Control result
+```
+
+The normal command adapter has no repository, employee, legacy orchestrator, or
+state-manager dependency. Demo and empty application factories do not configure
+mission commands. `RuntimeOrchestrator` remains importable for legacy workflows
+but is absent from normal application state and command routing.

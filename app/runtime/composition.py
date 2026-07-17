@@ -9,6 +9,7 @@ from agents.employee_registry import EmployeeRegistry
 from app.dashboard.service import DashboardService
 from app.runtime.company_roster import CompanyRoster, create_company_roster
 from app.runtime.runtime_dashboard import create_runtime_dashboard_service
+from app.runtime.mission_commands import MissionCommandService
 from config.settings import DATABASE_DIR
 from mission_control.repository import SQLiteMissionControlRepository
 from mission_control.service import MissionControlService
@@ -25,8 +26,10 @@ class RuntimeApplicationServices:
 
     roster: CompanyRoster
     employee_registry: EmployeeRegistry
+    employee_dispatcher: EmployeeDispatcher
     mission_control_service: MissionControlService
     runtime_manager: MissionRuntimeManager
+    mission_command_service: MissionCommandService
     dashboard_service: DashboardService
 
 
@@ -45,10 +48,12 @@ def create_runtime_application_services(
         allowed_root=allowed_root,
     )
     mission_control_service = MissionControlService(repository)
+    employee_dispatcher = EmployeeDispatcher(employee_registry)
     runtime_manager = MissionRuntimeManager(
         mission_control_service,
-        EmployeeDispatcher(employee_registry),
+        employee_dispatcher,
     )
+    mission_command_service = MissionCommandService(runtime_manager)
     dashboard_service = create_runtime_dashboard_service(
         roster=roster,
         mission_control_service=mission_control_service,
@@ -56,7 +61,9 @@ def create_runtime_application_services(
     return RuntimeApplicationServices(
         roster=roster,
         employee_registry=employee_registry,
+        employee_dispatcher=employee_dispatcher,
         mission_control_service=mission_control_service,
         runtime_manager=runtime_manager,
+        mission_command_service=mission_command_service,
         dashboard_service=dashboard_service,
     )
