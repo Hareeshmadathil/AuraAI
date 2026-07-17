@@ -11,6 +11,7 @@ from core import TaskPriority, utc_now
 from intelligence_director.enums import SignalSource, VerificationStatus
 from intelligence_director.models import IntelligenceSignal, SignalContext
 from intelligence_director.service import IntelligenceDirectorService
+from intelligence_director.content_intelligence import ContentIntelligenceService
 from knowledge_manager.models import KnowledgeQuery
 from knowledge_manager.service import KnowledgeManagerService
 from mission_control import MissionControlService
@@ -40,6 +41,7 @@ class MissionGenerator:
         knowledge_manager: KnowledgeManagerService,
         ceo: AuraCEO,
         evidence_layer: EvidenceLayer | None = None,
+        content_intelligence: ContentIntelligenceService | None = None,
     ) -> None:
         self.control = control
         self.trend_hunter = trend_hunter
@@ -47,6 +49,7 @@ class MissionGenerator:
         self.knowledge_manager = knowledge_manager
         self.ceo = ceo
         self.evidence_layer = evidence_layer or EvidenceLayer()
+        self.content_intelligence = content_intelligence or ContentIntelligenceService()
 
     def generate(
         self,
@@ -66,6 +69,7 @@ class MissionGenerator:
             else self.evidence_layer.fixtures(goal)
         )
         unique = self._unique_candidates(self.evidence_layer.candidates(evidence))
+        content_report = self.content_intelligence.analyze(evidence)
         opportunities = self.trend_hunter.rank_candidates(unique)
         scored = self._score_with_intelligence(opportunities)
         novel = [
@@ -81,7 +85,7 @@ class MissionGenerator:
             control=self.control,
             knowledge_manager=self.knowledge_manager,
         ).influence()
-        mission = self._mission(goal, selected, influence)
+        mission = self._mission(goal, selected, influence, content_report.recommendation)
         return self.control.create_mission(mission)
 
     def _review_goal(self, goal: str) -> None:
@@ -163,6 +167,7 @@ class MissionGenerator:
         goal: str,
         selected: ScoredOpportunity,
         lesson_influence: LessonInfluence,
+        content_recommendation: str,
     ) -> MissionRecord:
         score = round(
             max(0.0, min(100.0, selected.mission_score + lesson_influence.score_delta)),
@@ -226,7 +231,7 @@ class MissionGenerator:
                 4,
             ),
             mission_score=score,
-            reasoning_summary=f"Selected from deduplicated, authority- and freshness-ranked canonical evidence using 60% Trend Hunter opportunity score and 40% Intelligence Director priority. Contradictions remain explicit in evidence risks. Knowledge Manager found no exact prior mission titled '{opportunity.name}'. Mission lessons changed the score by {lesson_influence.score_delta:+.2f}: {'; '.join(lesson_influence.explanations) if lesson_influence.explanations else 'no approved current lesson applied'}.",
+            reasoning_summary=f"Selected from deduplicated, authority- and freshness-ranked canonical evidence using 60% Trend Hunter opportunity score and 40% Intelligence Director priority. Content Intelligence: {content_recommendation} Contradictions remain explicit in evidence risks. Knowledge Manager found no exact prior mission titled '{opportunity.name}'. Mission lessons changed the score by {lesson_influence.score_delta:+.2f}: {'; '.join(lesson_influence.explanations) if lesson_influence.explanations else 'no approved current lesson applied'}.",
             founder_owner="Hareesh",
             founder_goal=goal,
         )
