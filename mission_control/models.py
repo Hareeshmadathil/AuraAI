@@ -54,6 +54,7 @@ class ApprovalState(StrEnum):
     REJECTED = "rejected"
     EXPIRED = "expired"
     REVOKED = "revoked"
+    REVISION_REQUESTED = "revision_requested"
 
 
 class ArtifactApprovalState(StrEnum):

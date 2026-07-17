@@ -152,16 +152,97 @@ class MissionControlService:
         self._event("approval.requested", task.mission_id, task.task_id)
         return approval
 
-    def decide_approval(self, approval_id: UUID, state: ApprovalState, *, approver: str, reason: str) -> ApprovalRequest:
-        if state not in {ApprovalState.APPROVED, ApprovalState.REJECTED}:
-            raise ValueError("Approval decisions may only approve or reject.")
+    def decide_approval(
+        self,
+        approval_id: UUID,
+        state: ApprovalState,
+        *,
+        approver: str,
+        reason: str,
+        mission_id: UUID | None = None,
+        task_id: UUID | None = None,
+        requested_action: str | None = None,
+        content_hash: str | None = None,
+    ) -> ApprovalRequest:
+        if state not in {
+            ApprovalState.APPROVED,
+            ApprovalState.REJECTED,
+            ApprovalState.REVISION_REQUESTED,
+        }:
+            raise ValueError("Unsupported founder approval decision.")
         current = self._approval(approval_id)
+        bindings = (
+            (mission_id, current.mission_id, "mission"),
+            (task_id, current.task_id, "task"),
+            (requested_action, current.requested_action, "action"),
+            (content_hash, current.content_hash, "content hash"),
+        )
+        if any(supplied is not None and supplied != stored for supplied, stored, _ in bindings):
+            raise ValueError("Approval request binding does not match persisted authority.")
         if current.state != ApprovalState.PENDING:
             raise ValueError("Only pending approval may be decided.")
         if current.expires_at <= utc_now():
             expired=current.model_copy(update={"state":ApprovalState.EXPIRED,"decided_at":utc_now()}); self.repository.save_approval(expired); raise ValueError("Approval has expired.")
         updated=current.model_copy(update={"state":state,"approver":approver,"reason":reason,"decided_at":utc_now()})
         self.repository.save_approval(updated); self._event(f"approval.{state.value}",current.mission_id,current.task_id); return updated
+
+    def apply_founder_decision(
+        self,
+        approval_id: UUID,
+        state: ApprovalState,
+        *,
+        mission_id: UUID,
+        task_id: UUID,
+        requested_action: str,
+        content_hash: str,
+        reason: str,
+    ) -> ApprovalRequest:
+        """Apply one exact, local founder decision without downstream execution."""
+
+        if not reason.strip():
+            raise ValueError("A founder reason is required.")
+        mission = self._mission(mission_id)
+        task = self._task(task_id)
+        if mission.status != MissionControlStatus.APPROVAL_REQUIRED:
+            raise ValueError("Mission is not waiting for founder approval.")
+        if task.status != TaskStatus.APPROVAL_REQUIRED:
+            raise ValueError("Task is not waiting for founder approval.")
+        decision = self.decide_approval(
+            approval_id,
+            state,
+            approver="Local Founder",
+            reason=reason.strip(),
+            mission_id=mission_id,
+            task_id=task_id,
+            requested_action=requested_action,
+            content_hash=content_hash,
+        )
+        if state == ApprovalState.APPROVED:
+            self._update_task(task.model_copy(update={
+                "status": TaskStatus.COMPLETED,
+                "blocking_reason": None,
+                "updated_at": utc_now(),
+            }))
+            self.transition(mission_id, MissionControlStatus.RUNNING, stage="founder_approved")
+            self.transition(mission_id, MissionControlStatus.COMPLETED, stage="review_complete")
+        else:
+            self.transition(
+                mission_id,
+                MissionControlStatus.BLOCKED,
+                stage="founder_revision" if state == ApprovalState.REVISION_REQUESTED else "founder_rejected",
+            )
+            self._update_task(task.model_copy(update={
+                "status": TaskStatus.RETRY_PENDING if state == ApprovalState.REVISION_REQUESTED else TaskStatus.BLOCKED,
+                "blocking_reason": reason.strip(),
+                "updated_at": utc_now(),
+            }))
+        self._event(
+            "founder.decision",
+            mission_id,
+            task_id,
+            {"decision": state.value, "reason": reason.strip(), "approval_id": str(approval_id)},
+        )
+        return decision
 
     def revoke_approval(self, approval_id: UUID, *, approver: str, reason: str) -> ApprovalRequest:
         current=self._approval(approval_id)
