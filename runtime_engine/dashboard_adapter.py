@@ -25,6 +25,7 @@ from production.rendering.models import LocalRenderResult
 from creative_quality.models import CreativeQualityPackage
 from analytics.models import AnalyticsReport, LearningReport
 from distribution.models import DistributionPackage
+from mission_control.service import MissionControlService
 
 
 class EmployeeIdentityProvider(Protocol):
@@ -47,6 +48,7 @@ def create_dashboard_service_from_runtime(
     distribution_package: DistributionPackage | None = None,
     analytics_report: AnalyticsReport | None = None,
     learning_report: LearningReport | None = None,
+    mission_control_service: MissionControlService | None = None,
 ) -> DashboardService:
     """Create an injected dashboard service from one runtime snapshot."""
 
@@ -91,6 +93,7 @@ def create_dashboard_service_from_runtime(
         analytics_report=analytics_report,
         learning_report=learning_report,
         provider_state=runtime_snapshot.provider_state,
+        mission_control_service=mission_control_service,
     )
 
 

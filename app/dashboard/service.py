@@ -42,6 +42,7 @@ from creative_quality.models import CreativeQualityPackage
 from analytics.models import AnalyticsReport, LearningReport
 from distribution.models import DistributionPackage
 from providers.models import ProviderState
+from mission_control.service import MissionControlService
 
 
 class DashboardService:
@@ -70,6 +71,7 @@ class DashboardService:
         real_content_pilot: dict[str, Any] | None = None,
         first_content_mission: dict[str, Any] | None = None,
         private_video_production: dict[str, Any] | None = None,
+        mission_control_service: MissionControlService | None = None,
     ) -> None:
         """Store explicit state collections for snapshot generation."""
 
@@ -94,6 +96,13 @@ class DashboardService:
         self._real_content_pilot = real_content_pilot
         self._first_content_mission = first_content_mission
         self._private_video_production = private_video_production
+        self._mission_control_service = mission_control_service
+
+    @property
+    def mission_control_service(self) -> MissionControlService | None:
+        """Return the application-scoped Mission Control authority."""
+
+        return self._mission_control_service
 
     def build_snapshot(self) -> DashboardSnapshot:
         """Create a validated point-in-time dashboard snapshot."""

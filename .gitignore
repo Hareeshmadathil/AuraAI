@@ -19,3 +19,8 @@ data/audio/
 data/transcripts/
 data/timestamps/
 .pytest_cache/
+
+founder_inputs/*.json
+
+.pytest_cache/
+.pytest-temp/

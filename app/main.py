@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from threading import Lock
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +14,8 @@ from app.dashboard.routes import create_dashboard_router
 from app.dashboard.models import DashboardMode
 from app.dashboard.service import DashboardService
 from production_research.service import ProductionResearchService
+from mission_control.service import MissionControlService
+from runtime_engine.runtime_manager import MissionRuntimeManager
 
 
 def create_app(
@@ -18,7 +23,8 @@ def create_app(
     *,
     mode: DashboardMode | str = DashboardMode.EMPTY,
     production_research_service: ProductionResearchService | None = None,
-    mission_control_service: object | None = None,
+    mission_control_service: MissionControlService | None = None,
+    runtime_manager: MissionRuntimeManager | None = None,
 ) -> FastAPI:
     """Create and configure the local AuraAI dashboard application.
 
@@ -51,7 +57,22 @@ def create_app(
     application.state.production_research_service = (
         production_research_service or ProductionResearchService()
     )
+    if (
+        runtime_manager is not None
+        and runtime_manager.mission_control is not mission_control_service
+    ):
+        raise ValueError(
+            "Runtime manager and dashboard must share Mission Control."
+        )
+    if (
+        service.mission_control_service is not None
+        and service.mission_control_service is not mission_control_service
+    ):
+        raise ValueError(
+            "Dashboard service and application must share Mission Control."
+        )
     application.state.mission_control_service = mission_control_service
+    application.state.runtime_manager = runtime_manager
     application.mount(
         "/static",
         StaticFiles(directory=dashboard_root / "static"),
@@ -70,12 +91,30 @@ def create_demo_app() -> FastAPI:
     return create_app(mode=DashboardMode.DEMO)
 
 
-def create_runtime_app() -> FastAPI:
+def create_runtime_app(
+    *,
+    database_path: Path | None = None,
+    allowed_root: Path | None = None,
+) -> FastAPI:
     """Create the normal local runtime dashboard with the canonical roster."""
 
-    from app.runtime.runtime_dashboard import create_runtime_dashboard_service
+    from app.runtime.composition import (
+        DEFAULT_MISSION_CONTROL_DATABASE,
+        create_runtime_application_services,
+    )
+    from config.settings import DATABASE_DIR
 
-    return create_app(dashboard_service=create_runtime_dashboard_service())
+    services = create_runtime_application_services(
+        database_path=database_path or DEFAULT_MISSION_CONTROL_DATABASE,
+        allowed_root=allowed_root or DATABASE_DIR,
+    )
+    application = create_app(
+        dashboard_service=services.dashboard_service,
+        mission_control_service=services.mission_control_service,
+        runtime_manager=services.runtime_manager,
+    )
+    application.state.runtime_services = services
+    return application
 
 
 def create_niche_discovery_demo_app() -> FastAPI:
@@ -215,4 +254,36 @@ def create_knowledge_manager_demo_app() -> FastAPI:
     return create_app(mode=DashboardMode.DEMO)
 
 
-app = create_runtime_app()
+class LazyApplication:
+    """ASGI wrapper preserving ``app`` without import-time startup."""
+
+    def __init__(self, factory: Callable[[], FastAPI]) -> None:
+        self._factory = factory
+        self._application: FastAPI | None = None
+        self._lock = Lock()
+
+    @property
+    def is_initialized(self) -> bool:
+        """Return whether the ASGI application has been requested."""
+
+        return self._application is not None
+
+    def get_application(self) -> FastAPI:
+        """Create the normal application once on first use."""
+
+        if self._application is None:
+            with self._lock:
+                if self._application is None:
+                    self._application = self._factory()
+        return self._application
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Awaitable[dict[str, Any]]],
+        send: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        await self.get_application()(scope, receive, send)
+
+
+app = LazyApplication(create_runtime_app)
