@@ -1,6 +1,55 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if operations %}
+<section class="metrics operations-metrics" aria-label="Mission operations summary">
+{% for label, value in [
+    ('Total missions', operations.summary.total_missions),
+    ('Active missions', operations.summary.active_missions),
+    ('Pending approvals', operations.summary.pending_founder_approvals),
+    ('Blocked missions', operations.summary.blocked_missions),
+    ('Completed missions', operations.summary.completed_missions),
+    ('Creator packages', operations.summary.creator_packages),
+    ('Publishing manifests', operations.summary.publishing_manifests),
+    ('Recent lessons', operations.summary.recent_lessons)
+] %}
+<article class="metric-card"><p>{{ label }}</p><strong>{{ value }}</strong><span>Persisted Mission Control state</span></article>
+{% endfor %}
+</section>
+<section class="dashboard-grid">
+    <article class="panel panel-wide">
+        <header class="panel-header"><div><p class="eyebrow">Operations</p><h2>Mission Pipeline</h2></div></header>
+        <div class="card-list">
+        {% for mission in operations.missions %}
+            <div class="list-card stacked">
+                <div><h3>{{ mission.title }}</h3><p>{{ mission.founder_goal }}</p></div>
+                <p>{{ mission.status | status_label }} · {{ mission.priority | status_label }} · Score {{ '%.2f' | format(mission.mission_score) }} · {{ mission.current_stage }}</p>
+                <div class="progress" aria-label="{{ mission.progress_percentage }} percent complete"><span style="width: {{ mission.progress_percentage }}%"></span></div>
+                <small>{{ mission.completed_tasks }}/{{ mission.total_tasks }} tasks complete{% if mission.pending_approval %} · Founder attention required{% endif %}</small>
+                <div class="pipeline-strip">{% for stage in mission.pipeline %}<span class="pipeline-stage state-{{ stage.state.value | replace(' ', '-') }}"><strong>{{ stage.name }}</strong><small>{{ stage.state.value }}</small></span>{% endfor %}</div>
+                <a href="/missions/{{ mission.mission_id }}/review">Open canonical Founder Review</a>
+            </div>
+        {% else %}<p class="empty-state">No persisted Mission Control missions.</p>{% endfor %}
+        </div>
+    </article>
+    <article class="panel">
+        <header class="panel-header"><div><p class="eyebrow">Founder</p><h2>Attention Required</h2></div><span>{{ operations.attention | length }}</span></header>
+        <div class="card-list">{% for item in operations.attention %}<div class="list-card stacked"><h3>{{ item.title }}</h3><p>{{ item.state | status_label }} · {{ item.detail }}</p><a href="/missions/{{ item.mission_id }}/review">Review mission</a></div>{% else %}<p class="empty-state">No founder action is currently required.</p>{% endfor %}</div>
+    </article>
+    <article class="panel">
+        <header class="panel-header"><div><p class="eyebrow">Persisted</p><h2>Recent Activity</h2></div></header>
+        <ol class="timeline">{% for event in operations.activity %}<li><span aria-hidden="true"></span><div><h3>{{ event.event_type }}</h3><p>Mission {{ event.mission_id or 'system' }}</p><time>{{ event.timestamp.strftime('%H:%M UTC') }}</time></div></li>{% else %}<li class="empty-state">No persisted Mission Control events.</li>{% endfor %}</ol>
+    </article>
+    <article class="panel">
+        <header class="panel-header"><div><p class="eyebrow">Readiness</p><h2>System Status</h2></div></header>
+        <dl>{% for item in operations.systems %}<div><dt>{{ item.system }}</dt><dd><strong>{{ item.state | status_label }}</strong><br><small>{{ item.detail }}</small></dd></div>{% endfor %}</dl>
+    </article>
+    <article class="panel panel-wide">
+        <header class="panel-header"><div><p class="eyebrow">Capabilities</p><h2>Canonical Artifacts and Learning</h2></div><span>{{ operations.capabilities | length }}</span></header>
+        <div class="card-list">{% for item in operations.capabilities %}<div class="list-card stacked"><h3>{{ item.capability }}</h3><code class="compact-value">SHA-256 {{ item.content_hash }}</code><p class="compact-value">{{ item.summary }}</p><a href="/missions/{{ item.mission_id }}/review">Inspect in Founder Review</a></div>{% else %}<p class="empty-state">No capability artifacts are persisted yet.</p>{% endfor %}</div>
+    </article>
+</section>
+{% else %}
 <section class="metrics" aria-label="Operating metrics">
     {% for metric in snapshot.metrics %}
     <article class="metric-card">
@@ -88,4 +137,5 @@
         </dl><p>{{ snapshot.system_health.message }}</p>
     </article>
 </section>
+{% endif %}
 {% endblock %}

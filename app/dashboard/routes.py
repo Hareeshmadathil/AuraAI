@@ -20,6 +20,7 @@ from production_research.service import ProductionResearchService
 from mission_control.models import MissionControlProjection
 from mission_control.models import ApprovalState
 from app.dashboard.founder_review import build_founder_review
+from app.dashboard.operations_v2 import build_operations_projection
 
 
 class FounderDecisionForm(BaseModel):
@@ -73,6 +74,10 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             raise HTTPException(status_code=503, detail="Mission Control is not configured.")
         return control
 
+    def operations(request: Request):
+        control = request.app.state.mission_control_service
+        return build_operations_projection(control) if control is not None else None
+
     def require_local(request: Request) -> None:
         host = request.client.host if request.client else ""
         if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
@@ -114,6 +119,7 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             template_name="dashboard.html",
             page_title="Command Center",
             active_path="/",
+            extra_context={"operations": operations(request)},
         )
 
     @router.get("/employees", response_class=HTMLResponse)
@@ -160,7 +166,10 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             template_name="collection.html",
             page_title="Missions",
             active_path="/missions",
-            extra_context={"collection_kind": "missions"},
+            extra_context={
+                "collection_kind": "missions",
+                "operations": operations(request),
+            },
         )
 
     @router.get("/missions/{mission_id}/review", response_class=HTMLResponse)
