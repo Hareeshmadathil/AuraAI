@@ -105,6 +105,9 @@ def test_only_authoritative_mutation_routes_are_exposed(operations_context):
     assert mutation_paths == {
         "/api/missions",
         "/api/missions/{mission_id}/run-next",
+        "/api/missions/{mission_id}/recover",
+        "/api/missions/{mission_id}/tasks/{task_id}/retry",
+        "/api/missions/{mission_id}/tasks/{task_id}/resume",
         "/missions/{mission_id}/review/decision",
     }
 

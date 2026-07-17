@@ -64,6 +64,41 @@ class ArtifactApprovalState(StrEnum):
     REJECTED = "rejected"
 
 
+class AttemptStatus(StrEnum):
+    STARTED = "started"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+
+
+class FailureClassification(StrEnum):
+    NONE = "none"
+    RETRYABLE = "retryable"
+    NON_RETRYABLE = "non_retryable"
+    MANUAL_ONLY = "manual_only"
+    FOUNDER_REVIEW_REQUIRED = "founder_review_required"
+    INTERRUPTED = "interrupted"
+    EXHAUSTED = "exhausted"
+
+
+class RetryMode(StrEnum):
+    EXPLICIT = "explicit"
+    MANUAL_ONLY = "manual_only"
+    NEVER = "never"
+
+
+class CheckpointKind(StrEnum):
+    PROGRESS = "progress"
+    EMPLOYEE_STATE = "employee_state"
+    ARTIFACT_REFERENCE = "artifact_reference"
+
+
+class CheckpointResumability(StrEnum):
+    RESUMABLE = "resumable"
+    RESTART_REQUIRED = "restart_required"
+    MANUAL_ONLY = "manual_only"
+
+
 class MissionRecord(AuraBaseModel):
     mission_id: UUID = Field(default_factory=uuid4)
     title: str = Field(min_length=1, max_length=250)
@@ -110,6 +145,12 @@ class TaskRecord(AuraBaseModel):
     blocking_reason: str | None = Field(default=None, max_length=2000)
     idempotency_key: str = Field(min_length=1, max_length=200)
     payload: dict[str, Any] = Field(default_factory=dict)
+    retry_mode: RetryMode = RetryMode.EXPLICIT
+    backoff_multiplier: float = Field(default=1.0, ge=1.0, le=100.0)
+    next_eligible_at: datetime | None = None
+    last_failure_classification: FailureClassification = (
+        FailureClassification.NONE
+    )
     consequential: bool = False
     required_action: str | None = Field(default=None, max_length=150)
     required_artifact_hash: str | None = Field(
@@ -167,6 +208,9 @@ class ApprovalRequest(AuraBaseModel):
     issued_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime
     decided_at: datetime | None = None
+    checkpoint_id: UUID | None = None
+    correlation_id: UUID = Field(default_factory=uuid4)
+    causation_id: UUID | None = None
 
     @model_validator(mode="after")
     def validate_expiry(self) -> "ApprovalRequest":
@@ -193,7 +237,43 @@ class DepartmentResult(AuraBaseModel):
     success: bool
     payload: dict[str, Any] = Field(default_factory=dict)
     error_code: str | None = Field(default=None, max_length=150)
+    retryable: bool = True
     completed_at: datetime = Field(default_factory=utc_now)
+
+
+class ExecutionAttempt(AuraBaseModel):
+    attempt_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    task_id: UUID
+    employee_id: UUID
+    attempt_number: int = Field(ge=1)
+    starting_task_state: TaskStatus
+    status: AttemptStatus = AttemptStatus.STARTED
+    failure_classification: FailureClassification = FailureClassification.NONE
+    error_summary: str | None = Field(default=None, max_length=2000)
+    checkpoint_id: UUID | None = None
+    result_reference: str | None = Field(default=None, max_length=500)
+    retry_eligible: bool = False
+    correlation_id: UUID = Field(default_factory=uuid4)
+    causation_id: UUID | None = None
+    started_at: datetime = Field(default_factory=utc_now)
+    finished_at: datetime | None = None
+
+
+class TaskCheckpoint(AuraBaseModel):
+    checkpoint_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    task_id: UUID
+    attempt_id: UUID
+    sequence: int = Field(ge=1)
+    kind: CheckpointKind
+    payload: dict[str, Any] = Field(default_factory=dict)
+    artifact_reference: str | None = Field(default=None, max_length=1000)
+    payload_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    producer_employee_id: UUID
+    resumability: CheckpointResumability
+    schema_version: int = Field(default=1, ge=1)
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class MissionControlProjection(AuraBaseModel):
@@ -207,3 +287,5 @@ class MissionControlProjection(AuraBaseModel):
     pending_lesson_approvals: list[dict[str, Any]] = Field(default_factory=list)
     lesson_influences: list[str] = Field(default_factory=list)
     system_health: str
+    attempts: list[ExecutionAttempt] = Field(default_factory=list)
+    checkpoints: list[TaskCheckpoint] = Field(default_factory=list)

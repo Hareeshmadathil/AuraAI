@@ -276,3 +276,4 @@ class DashboardSnapshot(AuraBaseModel):
     real_content_pilot: dict[str, Any] | None = None
     first_content_mission: dict[str, Any] | None = None
     private_video_production: dict[str, Any] | None = None
+    recovery: dict[str, Any] | None = None

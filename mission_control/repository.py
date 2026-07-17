@@ -11,7 +11,8 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from mission_control.models import (
-    ApprovalRequest, ArtifactRecord, EventRecord, MissionRecord, TaskRecord,
+    ApprovalRequest, ArtifactRecord, EventRecord, ExecutionAttempt,
+    MissionRecord, TaskCheckpoint, TaskRecord,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -48,6 +49,20 @@ class MissionControlRepository(ABC):
     def append_event(self, value: EventRecord) -> EventRecord: ...
     @abstractmethod
     def list_events(self, mission_id: UUID | None = None) -> list[EventRecord]: ...
+    @abstractmethod
+    def save_attempt(self, value: ExecutionAttempt) -> None: ...
+    @abstractmethod
+    def update_attempt(self, value: ExecutionAttempt) -> None: ...
+    @abstractmethod
+    def get_attempt(self, attempt_id: UUID) -> ExecutionAttempt | None: ...
+    @abstractmethod
+    def list_attempts(self, mission_id: UUID | None = None) -> list[ExecutionAttempt]: ...
+    @abstractmethod
+    def save_checkpoint(self, value: TaskCheckpoint) -> None: ...
+    @abstractmethod
+    def get_checkpoint(self, checkpoint_id: UUID) -> TaskCheckpoint | None: ...
+    @abstractmethod
+    def list_checkpoints(self, mission_id: UUID | None = None) -> list[TaskCheckpoint]: ...
 
 
 class InMemoryMissionControlRepository(MissionControlRepository):
@@ -57,6 +72,8 @@ class InMemoryMissionControlRepository(MissionControlRepository):
         self.artifacts: dict[UUID, ArtifactRecord] = {}
         self.approvals: dict[UUID, ApprovalRequest] = {}
         self.events: list[EventRecord] = []
+        self.attempts: dict[UUID, ExecutionAttempt] = {}
+        self.checkpoints: dict[UUID, TaskCheckpoint] = {}
 
     def _insert(self, store: dict, key: UUID, value: T) -> None:
         if key in store:
@@ -79,11 +96,18 @@ class InMemoryMissionControlRepository(MissionControlRepository):
     def list_events(self, mission_id=None): return [v for v in self.events if mission_id is None or v.mission_id == mission_id]
     def update_mission(self, value): self.missions[value.mission_id] = value.model_copy(deep=True)
     def update_task(self, value): self.tasks[value.task_id] = value.model_copy(deep=True)
+    def save_attempt(self, value): self._insert(self.attempts, value.attempt_id, value)
+    def update_attempt(self, value): self.attempts[value.attempt_id] = value.model_copy(deep=True)
+    def get_attempt(self, attempt_id): return self.attempts.get(attempt_id)
+    def list_attempts(self, mission_id=None): return [v for v in self.attempts.values() if mission_id is None or v.mission_id == mission_id]
+    def save_checkpoint(self, value): self._insert(self.checkpoints, value.checkpoint_id, value)
+    def get_checkpoint(self, checkpoint_id): return self.checkpoints.get(checkpoint_id)
+    def list_checkpoints(self, mission_id=None): return [v for v in self.checkpoints.values() if mission_id is None or v.mission_id == mission_id]
 
 
 class SQLiteMissionControlRepository(MissionControlRepository):
     """SQLite JSON-record repository with foreign keys and atomic writes."""
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, database_path: Path, *, allowed_root: Path) -> None:
         root = allowed_root.resolve()
@@ -104,9 +128,12 @@ class SQLiteMissionControlRepository(MissionControlRepository):
             CREATE TABLE IF NOT EXISTS artifacts(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT REFERENCES tasks(id), data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT REFERENCES tasks(id), artifact_id TEXT REFERENCES artifacts(id), data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, mission_id TEXT REFERENCES missions(id), task_id TEXT REFERENCES tasks(id), event_type TEXT NOT NULL, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT NOT NULL REFERENCES tasks(id), data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT NOT NULL REFERENCES tasks(id), attempt_id TEXT NOT NULL REFERENCES attempts(id), data TEXT NOT NULL);
             """)
             row=self.connection.execute("SELECT version FROM schema_version").fetchone()
             if row is None: self.connection.execute("INSERT INTO schema_version(version) VALUES (?)",(self.SCHEMA_VERSION,))
+            elif row[0] == 1: self.connection.execute("UPDATE schema_version SET version = ?", (self.SCHEMA_VERSION,))
             elif row[0] != self.SCHEMA_VERSION: raise RuntimeError("Unsupported Mission Control schema version.")
 
     @staticmethod
@@ -149,3 +176,10 @@ class SQLiteMissionControlRepository(MissionControlRepository):
         with self.connection: self.connection.execute(f"UPDATE {table} SET data=? WHERE id=?",(self._json(value),str(identity)))
     def update_mission(self,v): self._update("missions",v.mission_id,v)
     def update_task(self,v): self._update("tasks",v.task_id,v)
+    def save_attempt(self,v): self._insert("INSERT INTO attempts(id,mission_id,task_id,data) VALUES (?,?,?,?)",(str(v.attempt_id),str(v.mission_id),str(v.task_id),self._json(v)))
+    def update_attempt(self,v): self._update("attempts",v.attempt_id,v)
+    def get_attempt(self,i): return self._get("attempts",i,ExecutionAttempt)
+    def list_attempts(self,mission_id=None): return self._list("attempts",ExecutionAttempt,mission_id)
+    def save_checkpoint(self,v): self._insert("INSERT INTO checkpoints(id,mission_id,task_id,attempt_id,data) VALUES (?,?,?,?,?)",(str(v.checkpoint_id),str(v.mission_id),str(v.task_id),str(v.attempt_id),self._json(v)))
+    def get_checkpoint(self,i): return self._get("checkpoints",i,TaskCheckpoint)
+    def list_checkpoints(self,mission_id=None): return self._list("checkpoints",TaskCheckpoint,mission_id)

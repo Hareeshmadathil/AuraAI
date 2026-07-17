@@ -42,6 +42,9 @@ class EmployeeDispatcher:
         try:
             employee.accept_task(task)
             operation_result = employee.execute_current_task()
+            if not operation_result.success and employee.has_active_task:
+                # Mission Control, not BaseEmployee, owns cross-attempt retries.
+                task.mark_failed(operation_result.message)
             return self._to_department_result(command, operation_result)
         except AgentError as error:
             return DepartmentResult(
@@ -55,6 +58,11 @@ class EmployeeDispatcher:
         finally:
             if employee.current_task is not None and not employee.has_active_task:
                 employee.clear_current_task()
+
+    def resolve_employee(self, command: DepartmentCommand) -> BaseEmployee:
+        """Resolve the employee that dispatch will use without executing work."""
+
+        return self._select_employee(command)
 
     def _select_employee(self, command: DepartmentCommand) -> BaseEmployee:
         if command.assigned_agent_id is not None:
@@ -91,4 +99,5 @@ class EmployeeDispatcher:
             success=result.success,
             payload=payload,
             error_code=result.error_code,
+            retryable=result.retryable,
         )

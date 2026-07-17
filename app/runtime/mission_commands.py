@@ -9,6 +9,7 @@ from pydantic import Field
 from core import AuraBaseModel
 from mission_control.models import MissionRecord, TaskRecord
 from runtime_engine.runtime_manager import MissionRuntimeManager
+from runtime_engine.recovery import RecoveryReport
 
 
 class RunNextTaskResult(AuraBaseModel):
@@ -50,4 +51,42 @@ class MissionCommandService:
                 if task is not None
                 else "No eligible task is ready."
             ),
+        )
+
+    def recover(self, mission_id: UUID) -> RecoveryReport:
+        """Explicitly rerun global reconciliation and return this report."""
+
+        if self._runtime_manager.mission_control.get_mission(mission_id) is None:
+            raise KeyError(f"Unknown mission: {mission_id}")
+        return self._runtime_manager.reconcile()
+
+    def retry(self, mission_id: UUID, task_id: UUID) -> RunNextTaskResult:
+        """Explicitly retry one policy-eligible task."""
+
+        task = self._runtime_manager.retry_task(mission_id, task_id)
+        return RunNextTaskResult(
+            mission_id=mission_id,
+            executed=True,
+            task=task,
+            detail="Eligible task retry executed.",
+        )
+
+    def resume(
+        self,
+        mission_id: UUID,
+        task_id: UUID,
+        checkpoint_id: UUID | None = None,
+    ) -> RunNextTaskResult:
+        """Explicitly resume from a valid checkpoint or restart policy."""
+
+        task = self._runtime_manager.resume_task(
+            mission_id,
+            task_id,
+            checkpoint_id,
+        )
+        return RunNextTaskResult(
+            mission_id=mission_id,
+            executed=True,
+            task=task,
+            detail="Eligible task resume executed.",
         )

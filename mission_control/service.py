@@ -9,7 +9,9 @@ from uuid import UUID
 
 from core import utc_now
 from mission_control.models import (
-    ApprovalRequest, ApprovalState, ArtifactApprovalState, ArtifactRecord, DepartmentCommand, DepartmentResult,
+    ApprovalRequest, ApprovalState, ArtifactApprovalState, ArtifactRecord,
+    AttemptStatus, CheckpointKind, CheckpointResumability, DepartmentCommand,
+    DepartmentResult, ExecutionAttempt, FailureClassification, TaskCheckpoint,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
     RiskLevel, TaskRecord, TaskStatus,
 )
@@ -39,6 +41,9 @@ class MissionControlService:
         """Return one authoritative mission without mutating state."""
 
         return self.repository.get_mission(mission_id)
+
+    def get_task(self, task_id: UUID) -> TaskRecord | None:
+        return self.repository.get_task(task_id)
 
     def list_missions(self) -> list[MissionRecord]:
         """Return authoritative missions for read-only consumers."""
@@ -70,6 +75,175 @@ class MissionControlService:
         """Return the canonical ordered event stream without mutation."""
 
         return self.repository.list_events(mission_id)
+
+    def get_attempt(self, attempt_id: UUID) -> ExecutionAttempt | None:
+        return self.repository.get_attempt(attempt_id)
+
+    def list_attempts(
+        self, mission_id: UUID | None = None
+    ) -> list[ExecutionAttempt]:
+        return self.repository.list_attempts(mission_id)
+
+    def get_checkpoint(self, checkpoint_id: UUID) -> TaskCheckpoint | None:
+        return self.repository.get_checkpoint(checkpoint_id)
+
+    def list_checkpoints(
+        self, mission_id: UUID | None = None
+    ) -> list[TaskCheckpoint]:
+        return self.repository.list_checkpoints(mission_id)
+
+    def begin_attempt(
+        self,
+        task_id: UUID,
+        employee_id: UUID,
+        *,
+        correlation_id: UUID,
+        causation_id: UUID | None = None,
+    ) -> ExecutionAttempt:
+        """Persist an execution attempt before dispatch begins."""
+
+        task = self._task(task_id)
+        active = [
+            item for item in self.repository.list_attempts(task.mission_id)
+            if item.task_id == task_id and item.status == AttemptStatus.STARTED
+        ]
+        if active:
+            raise ValueError("Task already has an active execution attempt.")
+        attempt = ExecutionAttempt(
+            mission_id=task.mission_id,
+            task_id=task_id,
+            employee_id=employee_id,
+            attempt_number=task.attempts + 1,
+            starting_task_state=task.status,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+        )
+        self.repository.save_attempt(attempt)
+        self._event("attempt.started", task.mission_id, task_id, {
+            "attempt_id": str(attempt.attempt_id),
+            "correlation_id": str(correlation_id),
+        })
+        return attempt
+
+    def finish_attempt(
+        self,
+        attempt_id: UUID,
+        result: DepartmentResult,
+    ) -> ExecutionAttempt:
+        """Persist one immutable terminal outcome for an active attempt."""
+
+        attempt = self.repository.get_attempt(attempt_id)
+        if attempt is None:
+            raise KeyError(f"Unknown attempt: {attempt_id}")
+        if attempt.status != AttemptStatus.STARTED:
+            return attempt
+        if (result.mission_id, result.task_id) != (
+            attempt.mission_id, attempt.task_id
+        ):
+            raise ValueError("Attempt result correlation does not match.")
+        task = self._task(attempt.task_id)
+        retry_eligible = (
+            not result.success
+            and result.retryable
+            and task.attempts < task.maximum_attempts
+        )
+        classification = (
+            FailureClassification.NONE
+            if result.success
+            else FailureClassification.RETRYABLE
+            if retry_eligible
+            else FailureClassification.EXHAUSTED
+            if task.attempts >= task.maximum_attempts
+            else FailureClassification.NON_RETRYABLE
+        )
+        updated = attempt.model_copy(update={
+            "status": AttemptStatus.COMPLETED if result.success else AttemptStatus.FAILED,
+            "failure_classification": classification,
+            "error_summary": result.error_code,
+            "result_reference": str(result.command_id),
+            "retry_eligible": retry_eligible,
+            "finished_at": result.completed_at,
+        })
+        self.repository.update_attempt(updated)
+        self._event("attempt.finished", attempt.mission_id, attempt.task_id, {
+            "attempt_id": str(attempt_id), "status": updated.status.value,
+            "failure_classification": classification.value,
+        })
+        return updated
+
+    def interrupt_attempt(self, attempt_id: UUID) -> ExecutionAttempt:
+        """Mark a crash-like active attempt interrupted exactly once."""
+
+        attempt = self.repository.get_attempt(attempt_id)
+        if attempt is None:
+            raise KeyError(f"Unknown attempt: {attempt_id}")
+        if attempt.status != AttemptStatus.STARTED:
+            return attempt
+        task = self._task(attempt.task_id)
+        retry_eligible = (
+            task.attempts < task.maximum_attempts
+            and task.retry_mode.value == "explicit"
+        )
+        updated = attempt.model_copy(update={
+            "status": AttemptStatus.INTERRUPTED,
+            "failure_classification": FailureClassification.INTERRUPTED,
+            "error_summary": "Process ended before result acceptance.",
+            "retry_eligible": retry_eligible,
+            "finished_at": utc_now(),
+        })
+        self.repository.update_attempt(updated)
+        self._event("attempt.interrupted", attempt.mission_id, attempt.task_id, {
+            "attempt_id": str(attempt_id),
+        })
+        return updated
+
+    def create_checkpoint(
+        self,
+        *,
+        attempt_id: UUID,
+        kind: CheckpointKind,
+        payload: dict[str, object],
+        producer_employee_id: UUID,
+        resumability: CheckpointResumability,
+        artifact_reference: str | None = None,
+        schema_version: int = 1,
+        expected_hash: str | None = None,
+    ) -> TaskCheckpoint:
+        """Validate and persist an auditable checkpoint."""
+
+        attempt = self.repository.get_attempt(attempt_id)
+        if attempt is None:
+            raise ValueError("Checkpoint attempt does not exist.")
+        if attempt.employee_id != producer_employee_id:
+            raise ValueError("Checkpoint producer does not own the attempt.")
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        payload_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        if expected_hash is not None and expected_hash != payload_hash:
+            raise ValueError("Checkpoint payload checksum does not match.")
+        sequence = 1 + max(
+            (item.sequence for item in self.repository.list_checkpoints(attempt.mission_id)
+             if item.task_id == attempt.task_id),
+            default=0,
+        )
+        checkpoint = TaskCheckpoint(
+            mission_id=attempt.mission_id,
+            task_id=attempt.task_id,
+            attempt_id=attempt_id,
+            sequence=sequence,
+            kind=kind,
+            payload=payload,
+            artifact_reference=artifact_reference,
+            payload_hash=payload_hash,
+            producer_employee_id=producer_employee_id,
+            resumability=resumability,
+            schema_version=schema_version,
+        )
+        self.repository.save_checkpoint(checkpoint)
+        self._event("checkpoint.created", attempt.mission_id, attempt.task_id, {
+            "checkpoint_id": str(checkpoint.checkpoint_id),
+            "attempt_id": str(attempt_id), "sequence": sequence,
+        })
+        return checkpoint
 
     def create_mission(self, mission: MissionRecord) -> MissionRecord:
         self.repository.save_mission(mission)
@@ -137,6 +311,8 @@ class MissionControlService:
         for task in tasks:
             if task.status not in {TaskStatus.PENDING, TaskStatus.RETRY_PENDING, TaskStatus.BLOCKED}:
                 continue
+            if task.next_eligible_at is not None and task.next_eligible_at > utc_now():
+                continue
             dependencies = [by_id[item] for item in task.dependencies]
             if any(item.status in {TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.BLOCKED} for item in dependencies):
                 self._update_task(task.model_copy(update={"status": TaskStatus.BLOCKED, "blocking_reason": "A dependency cannot complete.", "updated_at": utc_now()}))
@@ -151,7 +327,12 @@ class MissionControlService:
                 selected.append(task.model_copy(update={"status": TaskStatus.READY, "blocking_reason": None, "updated_at": utc_now()}))
         return sorted(selected, key=lambda item: (item.created_at, str(item.task_id)))
 
-    def dispatch(self, task_id: UUID) -> DepartmentCommand:
+    def dispatch(
+        self,
+        task_id: UUID,
+        *,
+        command_id: UUID | None = None,
+    ) -> DepartmentCommand:
         task = self._task(task_id)
         if task.status == TaskStatus.COMPLETED:
             raise ValueError("Completed task dispatch would violate idempotency.")
@@ -161,6 +342,24 @@ class MissionControlService:
         running = task.model_copy(update={"status": TaskStatus.RUNNING, "attempts": task.attempts + 1, "updated_at": utc_now()})
         self._update_task(running)
         self._event("task.dispatched", task.mission_id, task.task_id, {"attempt": running.attempts})
+        return DepartmentCommand(
+            **({"command_id": command_id} if command_id is not None else {}),
+            mission_id=task.mission_id,
+            task_id=task.task_id,
+            department=task.department,
+            assigned_agent_id=task.assigned_agent_id,
+            operation=task.title,
+            payload=task.payload,
+            idempotency_key=task.idempotency_key,
+        )
+
+    def dispatch_preview(self, task_id: UUID) -> DepartmentCommand:
+        """Build the pending command for employee resolution without mutation."""
+
+        task = self._task(task_id)
+        ready = {item.task_id for item in self.next_actions(task.mission_id)}
+        if task_id not in ready:
+            raise ValueError("Task is not the authoritative next action.")
         return DepartmentCommand(
             mission_id=task.mission_id,
             task_id=task.task_id,
@@ -173,12 +372,44 @@ class MissionControlService:
 
     def accept_result(self, result: DepartmentResult) -> TaskRecord:
         task = self._task(result.task_id)
+        if result.mission_id != task.mission_id:
+            raise ValueError("Result mission does not match the task.")
         if task.status == TaskStatus.COMPLETED:
             return task
         if task.status != TaskStatus.RUNNING:
             raise ValueError("Only a running task may accept a result.")
-        status = TaskStatus.COMPLETED if result.success else (TaskStatus.RETRY_PENDING if task.attempts < task.maximum_attempts else TaskStatus.FAILED)
-        updated = task.model_copy(update={"status": status, "blocking_reason": result.error_code, "updated_at": utc_now()})
+        retry_eligible = (
+            not result.success
+            and result.retryable
+            and task.retry_mode.value == "explicit"
+            and task.attempts < task.maximum_attempts
+        )
+        status = (
+            TaskStatus.COMPLETED if result.success
+            else TaskStatus.RETRY_PENDING if retry_eligible
+            else TaskStatus.FAILED if task.attempts >= task.maximum_attempts
+            else TaskStatus.BLOCKED
+        )
+        classification = (
+            FailureClassification.NONE if result.success
+            else FailureClassification.RETRYABLE if retry_eligible
+            else FailureClassification.EXHAUSTED if task.attempts >= task.maximum_attempts
+            else FailureClassification.NON_RETRYABLE
+        )
+        delay = round(
+            task.retry_delay_seconds
+            * (task.backoff_multiplier ** max(task.attempts - 1, 0))
+        )
+        updated = task.model_copy(update={
+            "status": status,
+            "blocking_reason": result.error_code,
+            "last_failure_classification": classification,
+            "next_eligible_at": (
+                utc_now() + timedelta(seconds=delay)
+                if retry_eligible else None
+            ),
+            "updated_at": utc_now(),
+        })
         self._update_task(updated)
         self._event(
             "task.completed" if result.success else "task.failed",
@@ -188,12 +419,36 @@ class MissionControlService:
         )
         return updated
 
-    def request_approval(self, task: TaskRecord, *, expires_in: timedelta = timedelta(hours=24)) -> ApprovalRequest:
+    def request_approval(
+        self,
+        task: TaskRecord,
+        *,
+        expires_in: timedelta = timedelta(hours=24),
+        checkpoint_id: UUID | None = None,
+        correlation_id: UUID | None = None,
+        causation_id: UUID | None = None,
+    ) -> ApprovalRequest:
         if not task.required_action or not task.required_artifact_hash:
             raise ValueError("Approval requires an action and content hash.")
-        approval = ApprovalRequest(mission_id=task.mission_id, task_id=task.task_id, requested_action=task.required_action, risk=RiskLevel.CONSEQUENTIAL, content_hash=task.required_artifact_hash, expires_at=utc_now()+expires_in)
+        approval = ApprovalRequest(
+            mission_id=task.mission_id,
+            task_id=task.task_id,
+            requested_action=task.required_action,
+            risk=RiskLevel.CONSEQUENTIAL,
+            content_hash=task.required_artifact_hash,
+            expires_at=utc_now()+expires_in,
+            checkpoint_id=checkpoint_id,
+            **({"correlation_id": correlation_id} if correlation_id else {}),
+            causation_id=causation_id,
+        )
         self.repository.save_approval(approval)
-        self._event("approval.requested", task.mission_id, task.task_id)
+        self._event("approval.requested", task.mission_id, task.task_id, {
+            "approval_id": str(approval.approval_id),
+            "correlation_id": str(approval.correlation_id),
+            "causation_id": str(causation_id) if causation_id else None,
+            "checkpoint_id": str(checkpoint_id) if checkpoint_id else None,
+            "content_hash": approval.content_hash,
+        })
         return approval
 
     def decide_approval(
@@ -228,7 +483,7 @@ class MissionControlService:
         if current.expires_at <= utc_now():
             expired=current.model_copy(update={"state":ApprovalState.EXPIRED,"decided_at":utc_now()}); self.repository.save_approval(expired); raise ValueError("Approval has expired.")
         updated=current.model_copy(update={"state":state,"approver":approver,"reason":reason,"decided_at":utc_now()})
-        self.repository.save_approval(updated); self._event(f"approval.{state.value}",current.mission_id,current.task_id); return updated
+        self.repository.save_approval(updated); self._event(f"approval.{state.value}",current.mission_id,current.task_id,{"approval_id":str(current.approval_id),"correlation_id":str(current.correlation_id),"causation_id":str(current.causation_id) if current.causation_id else None,"content_hash":current.content_hash,"checkpoint_id":str(current.checkpoint_id) if current.checkpoint_id else None,"approver":approver,"reason":reason}); return updated
 
     def apply_founder_decision(
         self,
@@ -302,10 +557,22 @@ class MissionControlService:
         recovered=[]
         for task in self.repository.list_tasks():
             if task.status != TaskStatus.RUNNING: continue
-            status=TaskStatus.APPROVAL_REQUIRED if task.consequential else TaskStatus.RETRY_PENDING
+            status=(
+                TaskStatus.APPROVAL_REQUIRED if task.consequential
+                else TaskStatus.RETRY_PENDING
+                if task.attempts < task.maximum_attempts
+                and task.retry_mode.value == "explicit"
+                else TaskStatus.FAILED
+            )
             updated=task.model_copy(update={"status":status,"blocking_reason":"Interrupted process recovered; dispatch was not repeated.","updated_at":utc_now()})
             self._update_task(updated); self._event("task.interrupted",task.mission_id,task.task_id); recovered.append(updated)
         return recovered
+
+    def record_recovery_report(self, report: object) -> EventRecord:
+        """Append an auditable summary without exposing repository writes."""
+
+        payload = report.model_dump(mode="json") if hasattr(report, "model_dump") else {}
+        return self._event("recovery.reconciled", payload=payload)
 
     def replay(self, mission_id: UUID) -> list[EventRecord]:
         return self.repository.list_events(mission_id)
@@ -317,7 +584,7 @@ class MissionControlService:
         lessons = [item.metadata for item in artifacts if item.artifact_type == "mission_learning.lesson"]
         pending_lessons = [item.metadata for item in artifacts if item.artifact_type == "mission_learning.lesson" and item.approval_state == ArtifactApprovalState.PENDING]
         influences = [mission.reasoning_summary for mission in self.repository.list_missions() if "Mission lessons changed" in mission.reasoning_summary]
-        return MissionControlProjection(missions=self.repository.list_missions(),pending_approvals=[a for a in approvals if a.state==ApprovalState.PENDING],blocked_tasks=[t for t in tasks if t.status in {TaskStatus.BLOCKED,TaskStatus.APPROVAL_REQUIRED}],recent_events=self.repository.list_events()[-50:],artifacts=artifacts,recent_mission_outcomes=outcomes,generated_lessons=lessons,pending_lesson_approvals=pending_lessons,lesson_influences=influences,system_health="operational")
+        return MissionControlProjection(missions=self.repository.list_missions(),pending_approvals=[a for a in approvals if a.state==ApprovalState.PENDING],blocked_tasks=[t for t in tasks if t.status in {TaskStatus.BLOCKED,TaskStatus.APPROVAL_REQUIRED}],recent_events=self.repository.list_events()[-50:],artifacts=artifacts,recent_mission_outcomes=outcomes,generated_lessons=lessons,pending_lesson_approvals=pending_lessons,lesson_influences=influences,system_health="operational",attempts=self.repository.list_attempts(),checkpoints=self.repository.list_checkpoints())
 
     def _event(self,event_type,mission_id=None,task_id=None,payload=None): return self.repository.append_event(EventRecord(event_type=event_type,mission_id=mission_id,task_id=task_id,payload=payload or {}))
     def _mission(self,i):

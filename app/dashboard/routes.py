@@ -26,6 +26,7 @@ from app.runtime.mission_commands import (
     RunNextTaskResult,
 )
 from mission_control.models import MissionRecord
+from runtime_engine.recovery import RecoveryReport, RecoveryStatusProjection, build_recovery_projection
 
 
 class FounderDecisionForm(BaseModel):
@@ -40,6 +41,12 @@ class FounderDecisionForm(BaseModel):
     content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     decision: ApprovalState
     reason: str = Field(min_length=1, max_length=2000)
+
+
+class ResumeTaskRequest(BaseModel):
+    """Optional checkpoint binding for a controlled resume command."""
+
+    checkpoint_id: UUID | None = None
 
 
 def get_dashboard_service(request: Request) -> DashboardService:
@@ -264,6 +271,8 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             raise HTTPException(status_code=404, detail="Mission review record was not found.") from error
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
         return RedirectResponse(
             url=f"/missions/{mission_id}/review",
             status_code=303,
@@ -623,6 +632,8 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             return mission_commands(request).submit(mission)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
 
     @router.post(
         "/api/missions/{mission_id}/run-next",
@@ -641,5 +652,75 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @router.post(
+        "/api/missions/{mission_id}/recover",
+        response_model=RecoveryReport,
+    )
+    def recover_mission(mission_id: UUID, request: Request) -> RecoveryReport:
+        """Explicitly rerun reconciliation without dispatching work."""
+
+        require_local(request)
+        try:
+            return mission_commands(request).recover(mission_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @router.post(
+        "/api/missions/{mission_id}/tasks/{task_id}/retry",
+        response_model=RunNextTaskResult,
+    )
+    def retry_mission_task(
+        mission_id: UUID, task_id: UUID, request: Request
+    ) -> RunNextTaskResult:
+        """Explicitly retry one task through the shared runtime manager."""
+
+        require_local(request)
+        try:
+            return mission_commands(request).retry(mission_id, task_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @router.post(
+        "/api/missions/{mission_id}/tasks/{task_id}/resume",
+        response_model=RunNextTaskResult,
+    )
+    def resume_mission_task(
+        mission_id: UUID,
+        task_id: UUID,
+        payload: ResumeTaskRequest,
+        request: Request,
+    ) -> RunNextTaskResult:
+        """Explicitly resume using a validated checkpoint or restart policy."""
+
+        require_local(request)
+        try:
+            return mission_commands(request).resume(
+                mission_id, task_id, payload.checkpoint_id
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @router.get("/api/recovery", response_model=RecoveryStatusProjection)
+    def recovery_status(request: Request) -> RecoveryStatusProjection:
+        """Expose the shared recovery gate and canonical recovery views."""
+
+        control = mission_control(request)
+        gate = getattr(request.app.state, "recovery_gate", None)
+        if gate is None:
+            raise HTTPException(status_code=503, detail="Recovery is not configured.")
+        return build_recovery_projection(control, gate)
 
     return router

@@ -15,6 +15,7 @@ from mission_control.repository import SQLiteMissionControlRepository
 from mission_control.service import MissionControlService
 from runtime_engine.employee_dispatcher import EmployeeDispatcher
 from runtime_engine.runtime_manager import MissionRuntimeManager
+from runtime_engine.recovery import RecoveryGate, RestartReconciler
 
 
 DEFAULT_MISSION_CONTROL_DATABASE = DATABASE_DIR / "mission-control.db"
@@ -30,6 +31,7 @@ class RuntimeApplicationServices:
     mission_control_service: MissionControlService
     runtime_manager: MissionRuntimeManager
     mission_command_service: MissionCommandService
+    recovery_gate: RecoveryGate
     dashboard_service: DashboardService
 
 
@@ -49,14 +51,24 @@ def create_runtime_application_services(
     )
     mission_control_service = MissionControlService(repository)
     employee_dispatcher = EmployeeDispatcher(employee_registry)
+    recovery_gate = RecoveryGate()
+    reconciler = RestartReconciler(mission_control_service)
     runtime_manager = MissionRuntimeManager(
         mission_control_service,
         employee_dispatcher,
+        recovery_gate,
+        reconciler,
     )
+    try:
+        runtime_manager.reconcile()
+    except Exception:
+        # The failed gate remains visible; every mutation command fails closed.
+        pass
     mission_command_service = MissionCommandService(runtime_manager)
     dashboard_service = create_runtime_dashboard_service(
         roster=roster,
         mission_control_service=mission_control_service,
+        recovery_gate=recovery_gate,
     )
     return RuntimeApplicationServices(
         roster=roster,
@@ -65,5 +77,6 @@ def create_runtime_application_services(
         mission_control_service=mission_control_service,
         runtime_manager=runtime_manager,
         mission_command_service=mission_command_service,
+        recovery_gate=recovery_gate,
         dashboard_service=dashboard_service,
     )

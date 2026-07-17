@@ -8,6 +8,7 @@ from mission_control.service import MissionControlService
 from runtime_engine.dashboard_adapter import create_dashboard_service_from_runtime
 from runtime_engine.event_bus import RuntimeEventBus
 from runtime_engine.state_manager import RuntimeStateManager
+from runtime_engine.recovery import RecoveryGate
 
 
 def create_runtime_dashboard_service(
@@ -15,6 +16,7 @@ def create_runtime_dashboard_service(
     *,
     roster: CompanyRoster | None = None,
     mission_control_service: MissionControlService | None = None,
+    recovery_gate: RecoveryGate | None = None,
 ) -> DashboardService:
     """Build a real roster dashboard from the existing runtime projection.
 
@@ -30,6 +32,7 @@ def create_runtime_dashboard_service(
             data_label="LOCAL RUNTIME STATE",
             employees=selected_roster.employees,
             mission_control_service=mission_control_service,
+            recovery_gate=recovery_gate,
         )
     runtime = state_manager or RuntimeStateManager(RuntimeEventBus())
     if runtime.mode.value == "stopped":

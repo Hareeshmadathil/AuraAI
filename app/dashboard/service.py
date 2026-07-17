@@ -45,6 +45,7 @@ from providers.models import ProviderState
 from mission_control.service import MissionControlService
 from mission_control.models import MissionControlStatus
 from app.dashboard.mission_projection import MissionControlDashboardReader
+from runtime_engine.recovery import RecoveryGate, build_recovery_projection
 
 
 class DashboardService:
@@ -74,6 +75,7 @@ class DashboardService:
         first_content_mission: dict[str, Any] | None = None,
         private_video_production: dict[str, Any] | None = None,
         mission_control_service: MissionControlService | None = None,
+        recovery_gate: RecoveryGate | None = None,
     ) -> None:
         """Store explicit state collections for snapshot generation."""
 
@@ -104,6 +106,7 @@ class DashboardService:
             if mission_control_service is not None
             else None
         )
+        self._recovery_gate = recovery_gate
 
     @property
     def mission_control_service(self) -> MissionControlService | None:
@@ -197,6 +200,15 @@ class DashboardService:
             real_content_pilot=self._real_content_pilot,
             first_content_mission=self._first_content_mission,
             private_video_production=self._private_video_production,
+            recovery=(
+                build_recovery_projection(
+                    self._mission_control_service,
+                    self._recovery_gate,
+                ).model_dump(mode="json")
+                if self._mission_control_service is not None
+                and self._recovery_gate is not None
+                else None
+            ),
         )
 
     def get_render_artifact(self, artifact_id: UUID) -> RenderedArtifact | None:

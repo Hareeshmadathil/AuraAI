@@ -1,6 +1,5 @@
 """Stable public interfaces for AuraAI Runtime Engine Phase 1."""
 
-from runtime_engine.dashboard_adapter import create_dashboard_service_from_runtime
 from runtime_engine.event_bus import RuntimeEventBus
 from runtime_engine.employee_dispatcher import EmployeeDispatcher
 from runtime_engine.mission_runner import MissionRunner
@@ -22,6 +21,16 @@ from runtime_engine.runtime_manager import (
 )
 from runtime_engine.scheduler import RuntimeSchedule, RuntimeScheduler
 from runtime_engine.state_manager import RuntimeStateManager
+
+
+def create_dashboard_service_from_runtime(*args, **kwargs):
+    """Lazily import the dashboard adapter to keep runtime models app-neutral."""
+
+    from runtime_engine.dashboard_adapter import (
+        create_dashboard_service_from_runtime as adapter,
+    )
+
+    return adapter(*args, **kwargs)
 
 __all__ = [
     "MissionRunner",
