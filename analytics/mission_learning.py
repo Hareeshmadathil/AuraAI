@@ -344,6 +344,13 @@ class MissionLearningService:
             explanations=explanations,
         )
 
+    def store_approved_lesson(self, lesson: MissionLesson) -> bool:
+        """Store one approved external-outcome lesson through Knowledge Manager."""
+
+        if lesson.approval_status != ApprovalStatus.APPROVED:
+            return False
+        return bool(self.knowledge.ingest(self._knowledge_request(lesson)).accepted)
+
     def _lesson(self, outcome, *, category, observation, evidence, confidence, impact, subsystem, behavior, metric):
         identity = uuid5(
             NAMESPACE_URL,
