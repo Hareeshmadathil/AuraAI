@@ -29,6 +29,13 @@ class MissionControlStatus(StrEnum):
     READY = "ready"
     RUNNING = "running"
     APPROVAL_REQUIRED = "approval_required"
+    FOUNDER_REVIEW_APPROVED = "founder_review_approved"
+    RENDERING = "rendering"
+    PUBLISHING_PREPARATION = "publishing_preparation"
+    AWAITING_PUBLISH_APPROVAL = "awaiting_publish_approval"
+    READY_FOR_MANUAL_PUBLISH = "ready_for_manual_publish"
+    AWAITING_MANUAL_PUBLISH_CONFIRMATION = "awaiting_manual_publish_confirmation"
+    PUBLISHED_CONFIRMED = "published_confirmed"
     BLOCKED = "blocked"
     PAUSED = "paused"
     COMPLETED = "completed"
@@ -276,6 +283,45 @@ class TaskCheckpoint(AuraBaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class RenderJobStatus(StrEnum):
+    PENDING = "pending"
+    RENDERING = "rendering"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+
+
+class PublishingQueueStatus(StrEnum):
+    AWAITING_PUBLISH_APPROVAL = "awaiting_publish_approval"
+    READY_FOR_MANUAL_PUBLISH = "ready_for_manual_publish"
+    AWAITING_MANUAL_PUBLISH_CONFIRMATION = "awaiting_manual_publish_confirmation"
+    PUBLISHED_CONFIRMED = "published_confirmed"
+
+
+class RenderJob(AuraBaseModel):
+    job_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    task_id: UUID
+    status: RenderJobStatus = RenderJobStatus.PENDING
+    progress_message: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class PublishingQueueItem(AuraBaseModel):
+    queue_item_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    manifest_id: UUID
+    source_package_id: UUID
+    target_platforms: list[str]
+    manifest_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    status: PublishingQueueStatus = PublishingQueueStatus.AWAITING_PUBLISH_APPROVAL
+    approval_id: UUID | None = None
+    manual_confirmation_note: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class MissionControlProjection(AuraBaseModel):
     missions: list[MissionRecord]
     pending_approvals: list[ApprovalRequest]
@@ -289,3 +335,5 @@ class MissionControlProjection(AuraBaseModel):
     system_health: str
     attempts: list[ExecutionAttempt] = Field(default_factory=list)
     checkpoints: list[TaskCheckpoint] = Field(default_factory=list)
+    render_jobs: list[RenderJob] = Field(default_factory=list)
+    publishing_queue: list[PublishingQueueItem] = Field(default_factory=list)

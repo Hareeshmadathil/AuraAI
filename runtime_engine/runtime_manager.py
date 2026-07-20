@@ -62,19 +62,51 @@ class MissionRuntimeManager:
 
     def _execute(self, task: TaskRecord) -> TaskRecord:
         preview = self.mission_control.dispatch_preview(task.task_id)
+        
+        payload_updates = {}
+        if task.department == "production" and "render" in task.title.lower():
+            mission = self.mission_control.get_mission(task.mission_id)
+            if mission.status == MissionControlStatus.FOUNDER_REVIEW_APPROVED:
+                self.mission_control.transition(task.mission_id, MissionControlStatus.RENDERING, stage="rendering")
+                
+            jobs = self.mission_control.list_render_jobs(task.mission_id)
+            job = next((j for j in jobs if j.task_id == task.task_id), None)
+            if not job:
+                from mission_control.models import RenderJob
+                job = RenderJob(mission_id=task.mission_id, task_id=task.task_id)
+                self.mission_control.save_render_job(job)
+            elif job.status == "completed":
+                updated_task = task.model_copy(update={"status": TaskStatus.COMPLETED})
+                self.mission_control.repository.update_task(updated_task)
+                return updated_task
+            payload_updates["render_job_id"] = str(job.job_id)
+
         employee = self.employee_dispatcher.resolve_employee(preview)
         attempt = self.mission_control.begin_attempt(
             task.task_id,
             employee.agent_id,
             correlation_id=preview.command_id,
         )
+        
         command = self.mission_control.dispatch(
             task.task_id,
             command_id=preview.command_id,
         )
+        
+        payload_updates["attempt_id"] = str(attempt.attempt_id)
+        if payload_updates:
+            command = command.model_copy(update={"payload": {**command.payload, **payload_updates}})
         result = self.employee_dispatcher.dispatch(command)
         accepted = self.mission_control.accept_result(result)
         self.mission_control.finish_attempt(attempt.attempt_id, result)
+        
+        if "render_job_id" in payload_updates:
+            job = self.mission_control.get_render_job(UUID(payload_updates["render_job_id"]))
+            if job:
+                from mission_control.models import RenderJobStatus
+                job.status = RenderJobStatus.COMPLETED if result.success else RenderJobStatus.FAILED
+                self.mission_control.update_render_job(job)
+                
         return accepted
 
     def retry_task(self, mission_id: UUID, task_id: UUID) -> TaskRecord:

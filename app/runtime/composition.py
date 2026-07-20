@@ -10,12 +10,20 @@ from app.dashboard.service import DashboardService
 from app.runtime.company_roster import CompanyRoster, create_company_roster
 from app.runtime.runtime_dashboard import create_runtime_dashboard_service
 from app.runtime.mission_commands import MissionCommandService
-from config.settings import DATABASE_DIR
+from config.settings import DATABASE_DIR, OUTPUT_DIR, DATA_DIR
 from mission_control.repository import SQLiteMissionControlRepository
 from mission_control.service import MissionControlService
 from runtime_engine.employee_dispatcher import EmployeeDispatcher
 from runtime_engine.runtime_manager import MissionRuntimeManager
 from runtime_engine.recovery import RecoveryGate, RestartReconciler
+from private_video_production.pipeline import PrivateVideoProductionPipeline
+from agents.specialists.render_specialist import RenderSpecialist
+from runtime_engine.render_context import (
+    DefaultIntegrityVerifier,
+    MissionControlArtifactRegistrar,
+    MissionControlArtifactResolver,
+    MissionControlCheckpointReader,
+)
 
 
 DEFAULT_MISSION_CONTROL_DATABASE = DATABASE_DIR / "mission-control.db"
@@ -50,6 +58,30 @@ def create_runtime_application_services(
         allowed_root=allowed_root,
     )
     mission_control_service = MissionControlService(repository)
+    
+    # Rendering adapters
+    checkpoint_reader = MissionControlCheckpointReader(mission_control_service)
+    artifact_registrar = MissionControlArtifactRegistrar(mission_control_service)
+    artifact_resolver = MissionControlArtifactResolver(mission_control_service)
+    integrity_verifier = DefaultIntegrityVerifier(artifact_resolver, allowed_roots=[OUTPUT_DIR, DATA_DIR, allowed_root])
+    
+    from private_video_production.composition import PrivateVideoComposition
+    prod_comp = PrivateVideoComposition.create(allowed_root)
+    pipeline = PrivateVideoProductionPipeline(
+        voice_service=prod_comp.voice_service,
+        capabilities=prod_comp.capabilities,
+        ffmpeg_runner=prod_comp.ffmpeg_runner,
+    )
+    
+    render_specialist = RenderSpecialist(
+        pipeline=pipeline,
+        checkpoint_reader=checkpoint_reader,
+        checkpoint_writer=mission_control_service,
+        artifact_registrar=artifact_registrar,
+        integrity_verifier=integrity_verifier,
+    )
+    employee_registry.register(render_specialist)
+
     employee_dispatcher = EmployeeDispatcher(employee_registry)
     recovery_gate = RecoveryGate()
     reconciler = RestartReconciler(mission_control_service)

@@ -13,7 +13,7 @@ from mission_control.models import (
     AttemptStatus, CheckpointKind, CheckpointResumability, DepartmentCommand,
     DepartmentResult, ExecutionAttempt, FailureClassification, TaskCheckpoint,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
-    RiskLevel, TaskRecord, TaskStatus,
+    RiskLevel, TaskRecord, TaskStatus, RenderJob, PublishingQueueItem,
 )
 from mission_control.repository import MissionControlRepository
 
@@ -21,8 +21,15 @@ from mission_control.repository import MissionControlRepository
 TRANSITIONS = {
     MissionControlStatus.CREATED: {MissionControlStatus.READY, MissionControlStatus.CANCELLED},
     MissionControlStatus.READY: {MissionControlStatus.RUNNING, MissionControlStatus.PAUSED, MissionControlStatus.CANCELLED},
-    MissionControlStatus.RUNNING: {MissionControlStatus.APPROVAL_REQUIRED, MissionControlStatus.BLOCKED, MissionControlStatus.PAUSED, MissionControlStatus.COMPLETED, MissionControlStatus.FAILED, MissionControlStatus.CANCELLED},
+    MissionControlStatus.RUNNING: {MissionControlStatus.APPROVAL_REQUIRED, MissionControlStatus.BLOCKED, MissionControlStatus.PAUSED, MissionControlStatus.COMPLETED, MissionControlStatus.FAILED, MissionControlStatus.CANCELLED, MissionControlStatus.FOUNDER_REVIEW_APPROVED},
     MissionControlStatus.APPROVAL_REQUIRED: {MissionControlStatus.RUNNING, MissionControlStatus.BLOCKED, MissionControlStatus.CANCELLED},
+    MissionControlStatus.FOUNDER_REVIEW_APPROVED: {MissionControlStatus.RENDERING, MissionControlStatus.CANCELLED},
+    MissionControlStatus.RENDERING: {MissionControlStatus.PUBLISHING_PREPARATION, MissionControlStatus.BLOCKED, MissionControlStatus.FAILED, MissionControlStatus.CANCELLED},
+    MissionControlStatus.PUBLISHING_PREPARATION: {MissionControlStatus.AWAITING_PUBLISH_APPROVAL, MissionControlStatus.BLOCKED, MissionControlStatus.FAILED, MissionControlStatus.CANCELLED},
+    MissionControlStatus.AWAITING_PUBLISH_APPROVAL: {MissionControlStatus.READY_FOR_MANUAL_PUBLISH, MissionControlStatus.BLOCKED, MissionControlStatus.CANCELLED},
+    MissionControlStatus.READY_FOR_MANUAL_PUBLISH: {MissionControlStatus.AWAITING_MANUAL_PUBLISH_CONFIRMATION, MissionControlStatus.CANCELLED},
+    MissionControlStatus.AWAITING_MANUAL_PUBLISH_CONFIRMATION: {MissionControlStatus.PUBLISHED_CONFIRMED, MissionControlStatus.CANCELLED},
+    MissionControlStatus.PUBLISHED_CONFIRMED: {MissionControlStatus.COMPLETED},
     MissionControlStatus.BLOCKED: {MissionControlStatus.READY, MissionControlStatus.PAUSED, MissionControlStatus.FAILED, MissionControlStatus.CANCELLED},
     MissionControlStatus.PAUSED: {MissionControlStatus.READY, MissionControlStatus.CANCELLED},
     MissionControlStatus.COMPLETED: set(),
@@ -91,6 +98,30 @@ class MissionControlService:
         self, mission_id: UUID | None = None
     ) -> list[TaskCheckpoint]:
         return self.repository.list_checkpoints(mission_id)
+
+    def get_render_job(self, job_id: UUID) -> RenderJob | None:
+        return self.repository.get_render_job(job_id)
+
+    def list_render_jobs(self, mission_id: UUID | None = None) -> list[RenderJob]:
+        return self.repository.list_render_jobs(mission_id)
+
+    def save_render_job(self, job: RenderJob) -> None:
+        self.repository.save_render_job(job)
+
+    def update_render_job(self, job: RenderJob) -> None:
+        self.repository.update_render_job(job)
+
+    def get_publishing_queue_item(self, queue_item_id: UUID) -> PublishingQueueItem | None:
+        return self.repository.get_publishing_queue_item(queue_item_id)
+
+    def list_publishing_queue_items(self, mission_id: UUID | None = None) -> list[PublishingQueueItem]:
+        return self.repository.list_publishing_queue_items(mission_id)
+
+    def save_publishing_queue_item(self, item: PublishingQueueItem) -> None:
+        self.repository.save_publishing_queue_item(item)
+
+    def update_publishing_queue_item(self, item: PublishingQueueItem) -> None:
+        self.repository.update_publishing_queue_item(item)
 
     def begin_attempt(
         self,
@@ -584,7 +615,7 @@ class MissionControlService:
         lessons = [item.metadata for item in artifacts if item.artifact_type == "mission_learning.lesson"]
         pending_lessons = [item.metadata for item in artifacts if item.artifact_type == "mission_learning.lesson" and item.approval_state == ArtifactApprovalState.PENDING]
         influences = [mission.reasoning_summary for mission in self.repository.list_missions() if "Mission lessons changed" in mission.reasoning_summary]
-        return MissionControlProjection(missions=self.repository.list_missions(),pending_approvals=[a for a in approvals if a.state==ApprovalState.PENDING],blocked_tasks=[t for t in tasks if t.status in {TaskStatus.BLOCKED,TaskStatus.APPROVAL_REQUIRED}],recent_events=self.repository.list_events()[-50:],artifacts=artifacts,recent_mission_outcomes=outcomes,generated_lessons=lessons,pending_lesson_approvals=pending_lessons,lesson_influences=influences,system_health="operational",attempts=self.repository.list_attempts(),checkpoints=self.repository.list_checkpoints())
+        return MissionControlProjection(missions=self.repository.list_missions(),pending_approvals=[a for a in approvals if a.state==ApprovalState.PENDING],blocked_tasks=[t for t in tasks if t.status in {TaskStatus.BLOCKED,TaskStatus.APPROVAL_REQUIRED}],recent_events=self.repository.list_events()[-50:],artifacts=artifacts,recent_mission_outcomes=outcomes,generated_lessons=lessons,pending_lesson_approvals=pending_lessons,lesson_influences=influences,system_health="operational",attempts=self.repository.list_attempts(),checkpoints=self.repository.list_checkpoints(),render_jobs=self.repository.list_render_jobs(),publishing_queue=self.repository.list_publishing_queue_items())
 
     def _event(self,event_type,mission_id=None,task_id=None,payload=None): return self.repository.append_event(EventRecord(event_type=event_type,mission_id=mission_id,task_id=task_id,payload=payload or {}))
     def _mission(self,i):

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from mission_control.models import (
     ApprovalRequest, ArtifactRecord, EventRecord, ExecutionAttempt,
-    MissionRecord, TaskCheckpoint, TaskRecord,
+    MissionRecord, TaskCheckpoint, TaskRecord, RenderJob, PublishingQueueItem,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -62,7 +62,24 @@ class MissionControlRepository(ABC):
     @abstractmethod
     def get_checkpoint(self, checkpoint_id: UUID) -> TaskCheckpoint | None: ...
     @abstractmethod
+    @abstractmethod
     def list_checkpoints(self, mission_id: UUID | None = None) -> list[TaskCheckpoint]: ...
+    @abstractmethod
+    def save_render_job(self, value: RenderJob) -> None: ...
+    @abstractmethod
+    def update_render_job(self, value: RenderJob) -> None: ...
+    @abstractmethod
+    def get_render_job(self, job_id: UUID) -> RenderJob | None: ...
+    @abstractmethod
+    def list_render_jobs(self, mission_id: UUID | None = None) -> list[RenderJob]: ...
+    @abstractmethod
+    def save_publishing_queue_item(self, value: PublishingQueueItem) -> None: ...
+    @abstractmethod
+    def update_publishing_queue_item(self, value: PublishingQueueItem) -> None: ...
+    @abstractmethod
+    def get_publishing_queue_item(self, queue_item_id: UUID) -> PublishingQueueItem | None: ...
+    @abstractmethod
+    def list_publishing_queue_items(self, mission_id: UUID | None = None) -> list[PublishingQueueItem]: ...
 
 
 class InMemoryMissionControlRepository(MissionControlRepository):
@@ -74,6 +91,8 @@ class InMemoryMissionControlRepository(MissionControlRepository):
         self.events: list[EventRecord] = []
         self.attempts: dict[UUID, ExecutionAttempt] = {}
         self.checkpoints: dict[UUID, TaskCheckpoint] = {}
+        self.render_jobs: dict[UUID, RenderJob] = {}
+        self.publishing_queue: dict[UUID, PublishingQueueItem] = {}
 
     def _insert(self, store: dict, key: UUID, value: T) -> None:
         if key in store:
@@ -103,6 +122,14 @@ class InMemoryMissionControlRepository(MissionControlRepository):
     def save_checkpoint(self, value): self._insert(self.checkpoints, value.checkpoint_id, value)
     def get_checkpoint(self, checkpoint_id): return self.checkpoints.get(checkpoint_id)
     def list_checkpoints(self, mission_id=None): return [v for v in self.checkpoints.values() if mission_id is None or v.mission_id == mission_id]
+    def save_render_job(self, value): self._insert(self.render_jobs, value.job_id, value)
+    def update_render_job(self, value): self.render_jobs[value.job_id] = value.model_copy(deep=True)
+    def get_render_job(self, job_id): return self.render_jobs.get(job_id)
+    def list_render_jobs(self, mission_id=None): return [v for v in self.render_jobs.values() if mission_id is None or v.mission_id == mission_id]
+    def save_publishing_queue_item(self, value): self._insert(self.publishing_queue, value.queue_item_id, value)
+    def update_publishing_queue_item(self, value): self.publishing_queue[value.queue_item_id] = value.model_copy(deep=True)
+    def get_publishing_queue_item(self, queue_item_id): return self.publishing_queue.get(queue_item_id)
+    def list_publishing_queue_items(self, mission_id=None): return [v for v in self.publishing_queue.values() if mission_id is None or v.mission_id == mission_id]
 
 
 class SQLiteMissionControlRepository(MissionControlRepository):
@@ -130,6 +157,8 @@ class SQLiteMissionControlRepository(MissionControlRepository):
             CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, mission_id TEXT REFERENCES missions(id), task_id TEXT REFERENCES tasks(id), event_type TEXT NOT NULL, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT NOT NULL REFERENCES tasks(id), data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT NOT NULL REFERENCES tasks(id), attempt_id TEXT NOT NULL REFERENCES attempts(id), data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS render_jobs(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT NOT NULL REFERENCES tasks(id), data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS publishing_queue(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), data TEXT NOT NULL);
             """)
             row=self.connection.execute("SELECT version FROM schema_version").fetchone()
             if row is None: self.connection.execute("INSERT INTO schema_version(version) VALUES (?)",(self.SCHEMA_VERSION,))
@@ -183,3 +212,11 @@ class SQLiteMissionControlRepository(MissionControlRepository):
     def save_checkpoint(self,v): self._insert("INSERT INTO checkpoints(id,mission_id,task_id,attempt_id,data) VALUES (?,?,?,?,?)",(str(v.checkpoint_id),str(v.mission_id),str(v.task_id),str(v.attempt_id),self._json(v)))
     def get_checkpoint(self,i): return self._get("checkpoints",i,TaskCheckpoint)
     def list_checkpoints(self,mission_id=None): return self._list("checkpoints",TaskCheckpoint,mission_id)
+    def save_render_job(self,v): self._insert("INSERT INTO render_jobs(id,mission_id,task_id,data) VALUES (?,?,?,?)",(str(v.job_id),str(v.mission_id),str(v.task_id),self._json(v)))
+    def update_render_job(self,v): self._update("render_jobs",v.job_id,v)
+    def get_render_job(self,i): return self._get("render_jobs",i,RenderJob)
+    def list_render_jobs(self,mission_id=None): return self._list("render_jobs",RenderJob,mission_id)
+    def save_publishing_queue_item(self,v): self._insert("INSERT INTO publishing_queue(id,mission_id,data) VALUES (?,?,?)",(str(v.queue_item_id),str(v.mission_id),self._json(v)))
+    def update_publishing_queue_item(self,v): self._update("publishing_queue",v.queue_item_id,v)
+    def get_publishing_queue_item(self,i): return self._get("publishing_queue",i,PublishingQueueItem)
+    def list_publishing_queue_items(self,mission_id=None): return self._list("publishing_queue",PublishingQueueItem,mission_id)
