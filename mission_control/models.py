@@ -307,6 +307,46 @@ class RenderJob(AuraBaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
+import uuid
+import hashlib
+import json
+
+AURA_QUEUE_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "queue.auraai.com")
+AURA_ARTIFACT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "artifacts.auraai.com")
+
+def generate_manifest_hash(manifest: "PublishingManifest") -> str:
+    encoded = json.dumps(
+        manifest.model_dump(mode="json", exclude_none=True),
+        sort_keys=True,
+        separators=(",", ":")
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+def generate_queue_identity(mission_id: UUID, task_id: UUID, destination: str, content_version: int, manifest_hash: str) -> UUID:
+    canonical_string = f"{mission_id}:{task_id}:{destination.strip().lower()}:{content_version}:{manifest_hash}"
+    return uuid.uuid5(AURA_QUEUE_NAMESPACE, canonical_string)
+
+def generate_manifest_artifact_identity(mission_id: UUID, task_id: UUID, destination: str, content_version: int, manifest_hash: str) -> UUID:
+    canonical_string = f"{mission_id}:{task_id}:{destination.strip().lower()}:{content_version}:{manifest_hash}"
+    return uuid.uuid5(AURA_ARTIFACT_NAMESPACE, canonical_string)
+
+class PublishingManifest(AuraBaseModel):
+    schema_version: int = 1
+    mission_id: UUID
+    task_id: UUID
+    render_job_id: UUID | None = None
+    destination: str
+    media_artifact_id: UUID
+    thumbnail_artifact_id: UUID | None = None
+    source_artifact_ids: list[UUID] = Field(default_factory=list)
+    title: str = Field(min_length=1, max_length=300)
+    description: str = Field(min_length=1, max_length=5000)
+    caption: str = Field(min_length=1, max_length=5000)
+    hashtags: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    language: str = Field(default="English", max_length=100)
+    content_version: int = Field(default=1, ge=1)
+
 
 class PublishingQueueItem(AuraBaseModel):
     queue_item_id: UUID = Field(default_factory=uuid4)

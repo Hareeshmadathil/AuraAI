@@ -310,6 +310,7 @@ class MissionControlService:
         value: object,
         provenance: dict[str, object],
         approval_state: ArtifactApprovalState = ArtifactApprovalState.PENDING,
+        artifact_id: UUID | None = None,
     ) -> ArtifactRecord:
         """Register a deterministic logical artifact produced by one task."""
 
@@ -317,6 +318,7 @@ class MissionControlService:
         self._task(task_id)
         payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
         artifact = ArtifactRecord(
+            **({"artifact_id": artifact_id} if artifact_id else {}),
             mission_id=mission_id,
             task_id=task_id,
             artifact_type=artifact_type,

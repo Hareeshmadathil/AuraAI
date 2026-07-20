@@ -18,12 +18,13 @@ from runtime_engine.runtime_manager import MissionRuntimeManager
 from runtime_engine.recovery import RecoveryGate, RestartReconciler
 from private_video_production.pipeline import PrivateVideoProductionPipeline
 from agents.specialists.render_specialist import RenderSpecialist
-from runtime_engine.render_context import (
+from runtime_engine.render_context import MissionControlCheckpointReader
+from runtime_engine.artifact_context import (
     DefaultIntegrityVerifier,
     MissionControlArtifactRegistrar,
     MissionControlArtifactResolver,
-    MissionControlCheckpointReader,
 )
+from agents.specialists.publishing_specialist import PublishingSpecialist
 
 
 DEFAULT_MISSION_CONTROL_DATABASE = DATABASE_DIR / "mission-control.db"
@@ -81,6 +82,12 @@ def create_runtime_application_services(
         integrity_verifier=integrity_verifier,
     )
     employee_registry.register(render_specialist)
+
+    publishing_specialist = PublishingSpecialist(
+        artifact_resolver=artifact_resolver,
+        integrity_verifier=integrity_verifier,
+    )
+    employee_registry.register(publishing_specialist)
 
     employee_dispatcher = EmployeeDispatcher(employee_registry)
     recovery_gate = RecoveryGate()

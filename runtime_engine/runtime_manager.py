@@ -52,8 +52,8 @@ class MissionRuntimeManager:
         mission = self.mission_control.get_mission(mission_id)
         if mission is None:
             raise KeyError(f"Unknown mission: {mission_id}")
-        if mission.status != MissionControlStatus.RUNNING:
-            raise ValueError("Only a running mission may execute tasks.")
+        if mission.status not in (MissionControlStatus.RUNNING, MissionControlStatus.PUBLISHING_PREPARATION):
+            raise ValueError(f"Only a running mission may execute tasks. Current status: {mission.status}")
         self._require_no_pending_approval(mission_id)
         actions = self.mission_control.next_actions(mission_id)
         if not actions:
@@ -81,6 +81,12 @@ class MissionRuntimeManager:
                 return updated_task
             payload_updates["render_job_id"] = str(job.job_id)
 
+        from core import DepartmentName
+        if task.department == DepartmentName.DISTRIBUTION and "publish" in task.title.lower():
+            mission = self.mission_control.get_mission(task.mission_id)
+            if mission.status != MissionControlStatus.PUBLISHING_PREPARATION:
+                self.mission_control.transition(task.mission_id, MissionControlStatus.PUBLISHING_PREPARATION, stage="publishing")
+
         employee = self.employee_dispatcher.resolve_employee(preview)
         attempt = self.mission_control.begin_attempt(
             task.task_id,
@@ -96,7 +102,84 @@ class MissionRuntimeManager:
         payload_updates["attempt_id"] = str(attempt.attempt_id)
         if payload_updates:
             command = command.model_copy(update={"payload": {**command.payload, **payload_updates}})
+        
         result = self.employee_dispatcher.dispatch(command)
+        
+        # After execution, validate publishing results
+        if task.department == DepartmentName.DISTRIBUTION and "publish" in task.title.lower() and result.success:
+            from mission_control.models import (
+                PublishingManifest,
+                PublishingQueueItem,
+                PublishingQueueStatus,
+                generate_manifest_hash,
+                generate_queue_identity,
+                generate_manifest_artifact_identity,
+            )
+            raw_manifest = result.payload.get("manifest")
+            try:
+                # 1. Validate typed manifest
+                if not raw_manifest:
+                    raise ValueError("Missing manifest in PublishingSpecialist result.")
+                manifest = PublishingManifest.model_validate(raw_manifest)
+                
+                # 2. Compute canonical hash
+                manifest_hash = generate_manifest_hash(manifest)
+                
+                # 3. Idempotently register manifest artifact
+                dest = str(task.payload.get("destination")).strip().lower()
+                content_version = task.payload.get("content_version", 1)
+                
+                artifact_id = generate_manifest_artifact_identity(
+                    task.mission_id, task.task_id, dest, content_version, manifest_hash
+                )
+                
+                existing_artifact = next((a for a in self.mission_control.list_artifacts() if a.artifact_id == artifact_id), None)
+                if not existing_artifact:
+                    self.mission_control.register_artifact(
+                        mission_id=task.mission_id,
+                        task_id=task.task_id,
+                        artifact_type="publishing_manifest",
+                        location="internal_db",
+                        value=manifest.model_dump(mode="json", exclude_none=True),
+                        provenance={"hash": manifest_hash, "generator": "PublishingSpecialist"},
+                        artifact_id=artifact_id
+                    )
+                
+                # 4. Idempotently create destination queue item
+                queue_id = generate_queue_identity(task.mission_id, task.task_id, dest, content_version, manifest_hash)
+                
+                existing_queue = self.mission_control.get_publishing_queue_item(queue_id)
+                if existing_queue:
+                    # Idempotent return - the queue item already exists with this identical hash
+                    pass
+                else:
+                    queue_item = PublishingQueueItem(
+                        queue_item_id=queue_id,
+                        mission_id=task.mission_id,
+                        manifest_id=artifact_id,
+                        source_package_id=UUID(str(manifest.source_artifact_ids[0])),
+                        target_platforms=[dest], # Enforce exactly one destination
+                        manifest_hash=manifest_hash,
+                        status=PublishingQueueStatus.AWAITING_PUBLISH_APPROVAL
+                    )
+                    self.mission_control.save_publishing_queue_item(queue_item)
+                    
+                    # 5. Transition AWAITING_PUBLISH_APPROVAL
+                    self.mission_control.transition(task.mission_id, MissionControlStatus.AWAITING_PUBLISH_APPROVAL, stage="publishing")
+                
+            except Exception as e:
+                # Validation or persistence failed, mark attempt as failed
+                from mission_control.models import DepartmentResult
+                result = DepartmentResult(
+                    command_id=command.command_id,
+                    mission_id=task.mission_id,
+                    task_id=task.task_id,
+                    success=False,
+                    payload={"exception": str(e)},
+                    error_code="PUBLISHING_SEQUENCE_FAILED",
+                    retryable=False
+                )
+
         accepted = self.mission_control.accept_result(result)
         self.mission_control.finish_attempt(attempt.attempt_id, result)
         
