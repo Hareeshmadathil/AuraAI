@@ -388,6 +388,19 @@ class PublishingQueueItem(AuraBaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
+
+class PublicationRecord(AuraBaseModel):
+    publication_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    queue_item_id: UUID
+    destination: str = Field(min_length=1, max_length=150)
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    external_url: str | None = Field(default=None, max_length=2000)
+    external_post_id: str | None = Field(default=None, max_length=150)
+    confirmation_note: str | None = Field(default=None, max_length=2000)
+    published_by_actor: str = Field(min_length=1, max_length=150)
+    confirmed_at: datetime = Field(default_factory=utc_now)
+
 class AuraDomainError(Exception):
     """Base domain exception."""
 

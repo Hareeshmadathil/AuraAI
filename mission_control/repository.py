@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from mission_control.models import (
     ApprovalRequest, ArtifactRecord, EventRecord, ExecutionAttempt,
     MissionRecord, TaskCheckpoint, TaskRecord, RenderJob, PublishingQueueItem,
+    PublicationRecord,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -82,6 +83,10 @@ class MissionControlRepository(ABC):
     @abstractmethod
     def list_publishing_queue_items(self, mission_id: UUID | None = None) -> list[PublishingQueueItem]: ...
     @abstractmethod
+    def save_publication_record(self, value: 'PublicationRecord') -> None: ...
+    @abstractmethod
+    def get_publication_record(self, queue_item_id: UUID) -> 'PublicationRecord' | None: ...
+    @abstractmethod
     @contextmanager
     def transaction(self) -> Iterator[None]: ...
 
@@ -97,6 +102,7 @@ class InMemoryMissionControlRepository(MissionControlRepository):
         self.checkpoints: dict[UUID, TaskCheckpoint] = {}
         self.render_jobs: dict[UUID, RenderJob] = {}
         self.publishing_queue: dict[UUID, PublishingQueueItem] = {}
+        self.publication_records: dict[UUID, PublicationRecord] = {}
         self._lock = threading.RLock()
 
     @contextmanager
@@ -142,6 +148,8 @@ class InMemoryMissionControlRepository(MissionControlRepository):
     def update_publishing_queue_item(self, value): self.publishing_queue[value.queue_item_id] = value.model_copy(deep=True)
     def get_publishing_queue_item(self, queue_item_id): return self.publishing_queue.get(queue_item_id)
     def list_publishing_queue_items(self, mission_id=None): return [v for v in self.publishing_queue.values() if mission_id is None or v.mission_id == mission_id]
+    def save_publication_record(self, value): self._insert(self.publication_records, value.queue_item_id, value)
+    def get_publication_record(self, queue_item_id): return self.publication_records.get(queue_item_id)
 
 
 class SQLiteMissionControlRepository(MissionControlRepository):
@@ -173,6 +181,7 @@ class SQLiteMissionControlRepository(MissionControlRepository):
             CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT NOT NULL REFERENCES tasks(id), attempt_id TEXT NOT NULL REFERENCES attempts(id), data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS render_jobs(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT NOT NULL REFERENCES tasks(id), data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS publishing_queue(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS publication_records(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), queue_item_id TEXT UNIQUE NOT NULL REFERENCES publishing_queue(id), data TEXT NOT NULL);
             """)
             row=self.connection.execute("SELECT version FROM schema_version").fetchone()
             if row is None: self.connection.execute("INSERT INTO schema_version(version) VALUES (?)",(self.SCHEMA_VERSION,))
@@ -309,3 +318,10 @@ class SQLiteMissionControlRepository(MissionControlRepository):
         with self._lock: return self._get("publishing_queue",i,PublishingQueueItem)
     def list_publishing_queue_items(self,mission_id=None):
         with self._lock: return self._list("publishing_queue",PublishingQueueItem,mission_id)
+
+    def save_publication_record(self, v):
+        with self._lock: self._insert("INSERT INTO publication_records(id,mission_id,queue_item_id,data) VALUES (?,?,?,?)",(str(v.publication_id),str(v.mission_id),str(v.queue_item_id),self._json(v)))
+    def get_publication_record(self, queue_item_id):
+        with self._lock:
+            row = self.connection.execute("SELECT data FROM publication_records WHERE queue_item_id = ?", (str(queue_item_id),)).fetchone()
+            return PublicationRecord.model_validate_json(row[0]) if row else None

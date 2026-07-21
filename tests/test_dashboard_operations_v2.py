@@ -110,6 +110,7 @@ def test_only_authoritative_mutation_routes_are_exposed(operations_context):
         "/api/missions/{mission_id}/tasks/{task_id}/resume",
         "/missions/{mission_id}/review/decision",
         "/missions/{mission_id}/publishing-queue/{queue_item_id}/decision",
+        "/missions/{mission_id}/publishing-queue/{queue_item_id}/confirm-publication",
     }
 
 

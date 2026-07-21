@@ -20,7 +20,44 @@
         <p><strong>Founder Note:</strong> {{ queue_item.founder_note }}</p>
         {% endif %}
 
-        {% if queue_item.is_actionable %}
+        {% if queue_item.publication_id %}
+        <div style="margin-top: 1rem; padding: 1rem; background-color: var(--color-surface-sunken); border-radius: 4px; border-left: 4px solid var(--color-success);">
+            <h3 style="margin-top: 0;">Published Successfully</h3>
+            <p><strong>Actor:</strong> {{ queue_item.published_by_actor }}</p>
+            <p><strong>Confirmed at:</strong> {{ queue_item.confirmed_at }}</p>
+            {% if queue_item.external_url %}
+            <p><strong>URL:</strong> <a href="{{ queue_item.external_url }}" target="_blank" rel="noopener">{{ queue_item.external_url }}</a></p>
+            {% endif %}
+            {% if queue_item.external_post_id %}
+            <p><strong>Post ID:</strong> {{ queue_item.external_post_id }}</p>
+            {% endif %}
+            {% if queue_item.founder_note %}
+            <p><strong>Note:</strong> {{ queue_item.founder_note }}</p>
+            {% endif %}
+        </div>
+        {% elif queue_item.is_publication_actionable %}
+        <form method="post" action="/missions/{{ queue_item.mission_id }}/publishing-queue/{{ queue_item.queue_item_id }}/confirm-publication" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; background-color: var(--color-surface-sunken); padding: 1rem; border-radius: 4px; border: 1px solid var(--color-border);">
+            <h3 style="margin-top: 0;">Confirm Publication</h3>
+            <p style="font-size: 0.9em; margin-bottom: 1rem;">Confirm that this content was successfully published. Provide at least one URL or Post ID.</p>
+            
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="content_hash" value="{{ queue_item.manifest_hash }}">
+
+            <label>External URL
+                <input type="url" name="external_url" style="width: 100%; padding: 0.25rem;" placeholder="https://youtube.com/...">
+            </label>
+
+            <label>External Post ID
+                <input type="text" name="external_post_id" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Confirmation Note
+                <textarea name="confirmation_note" rows="2" style="width: 100%; padding: 0.25rem;"></textarea>
+            </label>
+
+            <button type="submit" class="button" style="margin-top: 0.5rem;">Confirm Publication</button>
+        </form>
+        {% elif queue_item.is_actionable %}
         <form method="post" action="/missions/{{ queue_item.mission_id }}/publishing-queue/{{ queue_item.queue_item_id }}/decision" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="approval_id" value="{{ queue_item.approval_id }}">
@@ -45,7 +82,9 @@
         <div style="margin-top: 1rem; padding: 1rem; background-color: var(--color-surface-sunken); border-radius: 4px;">
             <p class="empty-state" style="margin: 0; font-size: 0.9em;">
                 <strong>Not Actionable</strong>
-                {% if queue_item.blocking_reason %}
+                {% if queue_item.publication_blocking_reason %}
+                    <br>{{ queue_item.publication_blocking_reason }}
+                {% elif queue_item.blocking_reason %}
                     <br>{{ queue_item.blocking_reason }}
                 {% endif %}
             </p>

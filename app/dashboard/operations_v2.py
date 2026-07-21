@@ -83,9 +83,16 @@ class DashboardPublishingQueueItem(AuraBaseModel):
     queue_status: str
     approval_state: str | None
     founder_note: str | None
+    publication_id: UUID | None = None
+    external_url: str | None = None
+    external_post_id: str | None = None
+    confirmed_at: str | None = None
+    published_by_actor: str | None = None
     is_active_generation: bool
     is_actionable: bool
     blocking_reason: str | None
+    is_publication_actionable: bool = False
+    publication_blocking_reason: str | None = None
 
 
 class DashboardOperationsProjection(AuraBaseModel):
@@ -162,8 +169,24 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
                 blocking_reason = f"Approval is {approval.state.value}."
             else:
                 is_actionable = True
-
+        
         primary_approval = matching_approvals[0] if matching_approvals else None
+        
+        pub_record = control.repository.get_publication_record(queue_item.queue_item_id)
+        is_pub_actionable = False
+        pub_blocking_reason = None
+        if queue_item.status == PublishingQueueStatus.PUBLISHED_CONFIRMED and pub_record is None:
+            pub_blocking_reason = "Inconsistent State: Confirmed status but missing durable record."
+        elif not queue_item.is_active:
+            pub_blocking_reason = "Queue item is not active."
+        elif queue_item.generation != mission_gen:
+            pub_blocking_reason = "Historical generation."
+        elif pub_record is not None:
+            pub_blocking_reason = "Already confirmed."
+        elif queue_item.status != PublishingQueueStatus.READY_FOR_MANUAL_PUBLISH:
+            pub_blocking_reason = f"Queue status is {queue_item.status.value}."
+        else:
+            is_pub_actionable = True
 
         publishing_queue.append(DashboardPublishingQueueItem(
             mission_id=queue_item.mission_id,
@@ -174,9 +197,16 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
             queue_status=queue_item.status.value,
             approval_state=primary_approval.state.value if primary_approval else None,
             founder_note=queue_item.founder_note,
+            publication_id=pub_record.publication_id if pub_record else None,
+            external_url=pub_record.external_url if pub_record else None,
+            external_post_id=pub_record.external_post_id if pub_record else None,
+            confirmed_at=pub_record.confirmed_at.isoformat() if pub_record else None,
+            published_by_actor=pub_record.published_by_actor if pub_record else None,
             is_active_generation=(queue_item.generation == mission_gen),
             is_actionable=is_actionable,
             blocking_reason=blocking_reason,
+            is_publication_actionable=is_pub_actionable,
+            publication_blocking_reason=pub_blocking_reason,
         ))
 
     return DashboardOperationsProjection(

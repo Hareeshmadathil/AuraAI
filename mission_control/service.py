@@ -772,6 +772,148 @@ class MissionControlService:
         if ready_count == len(mission.required_publish_destinations) and ready_count > 0:
             self.transition(mission_id, MissionControlStatus.READY_FOR_MANUAL_PUBLISH, stage="publish_approved")
 
+    def confirm_manual_publication(
+        self,
+        mission_id: UUID,
+        queue_item_id: UUID,
+        content_hash: str,
+        external_url: str | None,
+        external_post_id: str | None,
+        confirmation_note: str | None,
+        actor: str,
+    ) -> tuple['PublishingQueueItem', 'PublicationRecord']:
+        from mission_control.models import PublishingQueueStatus, ConflictingDecisionError, ItemNotFoundError, StaleContentError, MismatchError, MalformedCommandError, PublicationRecord, EventRecord
+        import uuid
+        import urllib.parse
+        import sqlite3
+
+        # A. Early Validation
+        queue_item = self.repository.get_publishing_queue_item(queue_item_id)
+        if queue_item is None:
+            raise ItemNotFoundError("Queue item not found.")
+        
+        if queue_item.mission_id != mission_id:
+            raise MismatchError("Queue item mission ID mismatch.")
+
+        try:
+            mission = self._mission(mission_id)
+        except KeyError:
+            raise ItemNotFoundError("Mission not found.")
+        
+        if queue_item.generation != mission.publishing_generation:
+            raise ConflictingDecisionError("Queue item generation mismatch.")
+            
+        if not queue_item.is_active:
+            raise ConflictingDecisionError("Queue item is not active.")
+
+        approval = self.repository.get_approval(queue_item.approval_id) if queue_item.approval_id else None
+        if approval is None or approval.state != "approved":
+            raise ConflictingDecisionError("Founder approval is missing or not approved.")
+
+        if content_hash != queue_item.manifest_hash:
+            raise StaleContentError("Submitted content hash mismatch.")
+
+        # B. Normalize and validate evidence
+        url = external_url.strip() if external_url else None
+        post_id = external_post_id.strip() if external_post_id else None
+        note = confirmation_note.strip() if confirmation_note else None
+        url = url if url else None
+        post_id = post_id if post_id else None
+        note = note if note else None
+
+        if not url and not post_id:
+            raise MalformedCommandError("Must provide at least one of external_url or external_post_id.")
+
+        if url:
+            if not (url.startswith("http://") or url.startswith("https://")):
+                raise MalformedCommandError("Invalid URL scheme.")
+            parsed = urllib.parse.urlparse(url)
+            if not parsed.netloc:
+                raise MalformedCommandError("Invalid URL hostname.")
+            if len(url) > 2000:
+                raise MalformedCommandError("URL too long.")
+
+        if post_id and len(post_id) > 150:
+            raise MalformedCommandError("Post ID too long.")
+        if note and len(note) > 2000:
+            raise MalformedCommandError("Confirmation note too long.")
+
+        # C. Look up PublicationRecord
+        existing_record = self.repository.get_publication_record(queue_item_id)
+
+        # D. Idempotent-Retry Branch
+        if existing_record:
+            if (existing_record.mission_id == mission_id and
+                existing_record.destination == queue_item.destination and
+                existing_record.content_hash == content_hash and
+                existing_record.external_url == url and
+                existing_record.external_post_id == post_id and
+                existing_record.confirmation_note == note):
+                return queue_item, existing_record
+            else:
+                raise ConflictingDecisionError("Conflicting publication evidence provided for already-confirmed item.")
+
+        # E. First-Confirmation Branch
+        if queue_item.status != PublishingQueueStatus.READY_FOR_MANUAL_PUBLISH:
+            if queue_item.status == PublishingQueueStatus.PUBLISHED_CONFIRMED:
+                raise ConflictingDecisionError("Inconsistent state: PUBLISHED_CONFIRMED without a durable record. Blocked.")
+            else:
+                raise ConflictingDecisionError(f"Cannot confirm publication for status {queue_item.status.value}")
+
+        new_record = PublicationRecord(
+            mission_id=mission_id,
+            queue_item_id=queue_item_id,
+            destination=queue_item.destination,
+            content_hash=content_hash,
+            external_url=url,
+            external_post_id=post_id,
+            confirmation_note=note,
+            published_by_actor=actor,
+        )
+
+        try:
+            with self.repository.transaction():
+                self.repository.save_publication_record(new_record)
+                
+                updated_queue = queue_item.model_copy(update={
+                    "status": PublishingQueueStatus.PUBLISHED_CONFIRMED,
+                    "updated_at": utc_now()
+                })
+                self.repository.update_publishing_queue_item(updated_queue)
+                
+                event_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"publication_confirmation:{new_record.publication_id}")
+                self.repository.append_event(EventRecord(
+                    event_id=event_id,
+                    event_type="publication.confirmed",
+                    mission_id=mission_id,
+                    payload={
+                        "publication_id": str(new_record.publication_id),
+                        "mission_id": str(mission_id),
+                        "queue_item_id": str(queue_item_id),
+                        "destination": queue_item.destination,
+                        "content_hash": content_hash,
+                        "actor": actor,
+                        "confirmed_at": new_record.confirmed_at.isoformat(),
+                        "external_url": url,
+                        "external_post_id": post_id,
+                        "confirmation_note": note,
+                    }
+                ))
+                return updated_queue, new_record
+        except (ValueError, sqlite3.IntegrityError) as err:
+            if "UNIQUE constraint failed" in str(err) or "duplicate" in str(err).lower() or "integrity" in str(err).lower() or isinstance(err, sqlite3.IntegrityError):
+                winner = self.repository.get_publication_record(queue_item_id)
+                if winner:
+                    if (winner.mission_id == mission_id and
+                        winner.destination == queue_item.destination and
+                        winner.content_hash == content_hash and
+                        winner.external_url == url and
+                        winner.external_post_id == post_id and
+                        winner.confirmation_note == note):
+                        return queue_item, winner
+                    raise ConflictingDecisionError("Conflicting publication evidence from concurrent race.")
+            raise
+
     def projection(self) -> MissionControlProjection:
         tasks=self.repository.list_tasks(); approvals=self.repository.list_approvals()
         artifacts = self.repository.list_artifacts()

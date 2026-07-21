@@ -129,3 +129,38 @@ class MissionCommandService:
             reason=reason,
             actor=actor,
         )
+
+    def confirm_manual_publication(
+        self,
+        *,
+        mission_id: UUID,
+        queue_item_id: UUID,
+        content_hash: str,
+        external_url: str | None,
+        external_post_id: str | None,
+        confirmation_note: str | None,
+        actor: str,
+    ) -> tuple[PublishingQueueItem, 'PublicationRecord']:
+        """Submit a manual publication confirmation."""
+        if not actor or not actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+
+        url = external_url.strip() if external_url else None
+        post_id = external_post_id.strip() if external_post_id else None
+        
+        if not url and not post_id:
+            raise MalformedCommandError("Must provide at least one of external_url or external_post_id.")
+            
+        if url:
+            if not (url.startswith("http://") or url.startswith("https://")):
+                raise MalformedCommandError("Invalid URL scheme.")
+
+        return self._runtime_manager.mission_control.confirm_manual_publication(
+            mission_id=mission_id,
+            queue_item_id=queue_item_id,
+            content_hash=content_hash,
+            external_url=external_url,
+            external_post_id=external_post_id,
+            confirmation_note=confirmation_note,
+            actor=actor,
+        )

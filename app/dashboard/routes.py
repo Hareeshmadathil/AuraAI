@@ -44,6 +44,14 @@ class FounderPublishDecisionForm(BaseModel):
     decision: FounderPublishDecision
     reason: str | None = None
 
+class ManualPublicationConfirmationForm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    csrf_token: str = Field(min_length=32, max_length=200)
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    external_url: str | None = None
+    external_post_id: str | None = None
+    confirmation_note: str | None = None
+
 class FounderDecisionForm(BaseModel):
     """Strict hash-bound local founder mutation payload."""
 
@@ -722,6 +730,66 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except RuntimeError as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @router.post("/missions/{mission_id}/publishing-queue/{queue_item_id}/confirm-publication")
+    async def manual_publish_confirmation(
+        mission_id: UUID,
+        queue_item_id: UUID,
+        request: Request,
+    ) -> RedirectResponse:
+        """Apply a POST-only, CSRF-protected manual publication confirmation."""
+        from mission_control.models import (
+            ItemNotFoundError,
+            StaleContentError,
+            ConflictingDecisionError,
+            MalformedCommandError,
+            MismatchError,
+        )
+
+        require_local(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(status_code=415, detail="Unsupported form content type.")
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Confirmation form is too large.")
+        try:
+            values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True)
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form = ManualPublicationConfirmationForm.model_validate(
+                {key: value[0] for key, value in values.items()}
+            )
+        except (UnicodeDecodeError, ValueError, ValidationError) as error:
+            raise HTTPException(status_code=422, detail=f"Invalid confirmation form: {error}") from error
+
+        cookie_token = request.cookies.get("auraai_csrf", "")
+        if not cookie_token or not secrets.compare_digest(cookie_token, form.csrf_token):
+            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+
+        try:
+            mission_commands(request).confirm_manual_publication(
+                mission_id=mission_id,
+                queue_item_id=queue_item_id,
+                content_hash=form.content_hash,
+                external_url=form.external_url,
+                external_post_id=form.external_post_id,
+                confirmation_note=form.confirmation_note,
+                actor="Local Founder",
+            )
+        except ItemNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except (StaleContentError, ConflictingDecisionError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except (MismatchError, MalformedCommandError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+        return RedirectResponse(
+            url=f"/missions/{mission_id}/distribution",
+            status_code=303,
+        )
 
     @router.post(
         "/api/missions/{mission_id}/run-next",
