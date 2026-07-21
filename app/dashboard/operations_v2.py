@@ -74,6 +74,20 @@ class CapabilityView(AuraBaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
 
 
+class DashboardPublishingQueueItem(AuraBaseModel):
+    mission_id: UUID
+    queue_item_id: UUID
+    approval_id: UUID | None
+    destination: str
+    manifest_hash: str
+    queue_status: str
+    approval_state: str | None
+    founder_note: str | None
+    is_active_generation: bool
+    is_actionable: bool
+    blocking_reason: str | None
+
+
 class DashboardOperationsProjection(AuraBaseModel):
     summary: OperationsSummary
     missions: list[MissionOperationsView]
@@ -81,10 +95,13 @@ class DashboardOperationsProjection(AuraBaseModel):
     attention: list[FounderAttentionView]
     systems: list[SystemStatusView]
     capabilities: list[CapabilityView]
+    publishing_queue: list[DashboardPublishingQueueItem] = Field(default_factory=list)
 
 
 def build_operations_projection(control: MissionControlService) -> DashboardOperationsProjection:
     """Derive the complete operations view without storing parallel state."""
+
+    from mission_control.models import PublishingQueueStatus
 
     missions = control.list_missions()
     artifacts = control.list_artifacts()
@@ -109,6 +126,59 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
         publishing_manifests=sum("publishing_manifest" in item for item in artifact_types),
         recent_lessons=sum("mission_learning.lesson" in item for item in artifact_types),
     )
+
+    queue_items = control.list_publishing_queue_items()
+    publishing_queue: list[DashboardPublishingQueueItem] = []
+
+    for queue_item in queue_items:
+        mission = next((m for m in missions if m.mission_id == queue_item.mission_id), None)
+        mission_gen = mission.publishing_generation if mission else -1
+
+        # Deterministic Projection Resolution
+        matching_approvals = [
+            a for a in approvals
+            if a.subject_type == "publishing_queue_item"
+            and a.subject_id == queue_item.queue_item_id
+            and a.content_hash == queue_item.manifest_hash
+            and a.state != ApprovalState.SUPERSEDED
+        ]
+
+        is_actionable = False
+        blocking_reason = None
+
+        if not queue_item.is_active:
+            blocking_reason = "Queue item is not active."
+        elif queue_item.generation != mission_gen:
+            blocking_reason = "Historical generation."
+        elif queue_item.status != PublishingQueueStatus.AWAITING_PUBLISH_APPROVAL:
+            blocking_reason = f"Queue status is {queue_item.status.value}."
+        elif len(matching_approvals) == 0:
+            blocking_reason = "No matching approval found."
+        elif len(matching_approvals) > 1:
+            blocking_reason = "Ambiguous approvals exist."
+        else:
+            approval = matching_approvals[0]
+            if approval.state != ApprovalState.PENDING:
+                blocking_reason = f"Approval is {approval.state.value}."
+            else:
+                is_actionable = True
+
+        primary_approval = matching_approvals[0] if matching_approvals else None
+
+        publishing_queue.append(DashboardPublishingQueueItem(
+            mission_id=queue_item.mission_id,
+            queue_item_id=queue_item.queue_item_id,
+            approval_id=primary_approval.approval_id if primary_approval else queue_item.approval_id,
+            destination=queue_item.destination,
+            manifest_hash=queue_item.manifest_hash,
+            queue_status=queue_item.status.value,
+            approval_state=primary_approval.state.value if primary_approval else None,
+            founder_note=queue_item.founder_note,
+            is_active_generation=(queue_item.generation == mission_gen),
+            is_actionable=is_actionable,
+            blocking_reason=blocking_reason,
+        ))
+
     return DashboardOperationsProjection(
         summary=summary,
         missions=operations,
@@ -128,6 +198,7 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
                 "publishing_manifest", "business_metrics", "mission_learning.lesson",
             ))
         ],
+        publishing_queue=publishing_queue,
     )
 
 

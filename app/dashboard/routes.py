@@ -29,6 +29,21 @@ from mission_control.models import MissionRecord
 from runtime_engine.recovery import RecoveryReport, RecoveryStatusProjection, build_recovery_projection
 
 
+from enum import StrEnum
+
+class FounderPublishDecision(StrEnum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REVISION_REQUESTED = "revision_requested"
+
+class FounderPublishDecisionForm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    csrf_token: str = Field(min_length=32, max_length=200)
+    approval_id: UUID
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    decision: FounderPublishDecision
+    reason: str | None = None
+
 class FounderDecisionForm(BaseModel):
     """Strict hash-bound local founder mutation payload."""
 
@@ -278,6 +293,64 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             status_code=303,
         )
 
+    @router.post("/missions/{mission_id}/publishing-queue/{queue_item_id}/decision")
+    async def founder_publish_decision(
+        mission_id: UUID,
+        queue_item_id: UUID,
+        request: Request,
+    ) -> RedirectResponse:
+        """Apply a POST-only, CSRF-protected founder publish decision."""
+        from mission_control.models import (
+            ItemNotFoundError,
+            StaleContentError,
+            ConflictingDecisionError,
+            MalformedCommandError,
+            MismatchError,
+        )
+
+        require_local(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(status_code=415, detail="Unsupported form content type.")
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Founder decision form is too large.")
+        try:
+            values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True)
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form = FounderPublishDecisionForm.model_validate(
+                {key: value[0] for key, value in values.items()}
+            )
+        except (UnicodeDecodeError, ValueError, ValidationError) as error:
+            raise HTTPException(status_code=422, detail=f"Invalid founder publish decision form: {error}") from error
+
+        cookie_token = request.cookies.get("auraai_csrf", "")
+        if not cookie_token or not secrets.compare_digest(cookie_token, form.csrf_token):
+            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+
+        try:
+            mission_commands(request).submit_publish_decision(
+                mission_id=mission_id,
+                queue_item_id=queue_item_id,
+                approval_id=form.approval_id,
+                content_hash=form.content_hash,
+                decision=form.decision,
+                reason=form.reason,
+                actor="Local Founder",
+            )
+        except ItemNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except (StaleContentError, ConflictingDecisionError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except (MalformedCommandError, MismatchError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return RedirectResponse(
+            url="/distribution",
+            status_code=303,
+        )
+
     @router.get("/workflows", response_class=HTMLResponse)
     def workflows_page(
         request: Request,
@@ -392,13 +465,28 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
     ) -> HTMLResponse:
         """Render local publish preparation and founder approval state."""
 
-        return render(
+        require_local(request)
+        csrf_token = secrets.token_urlsafe(32)
+        response = render(
             request=request,
             service=service,
             template_name="distribution.html",
             page_title="Distribution",
             active_path="/distribution",
+            extra_context={
+                "operations": operations(request),
+                "csrf_token": csrf_token,
+            },
         )
+        response.set_cookie(
+            "auraai_csrf",
+            csrf_token,
+            httponly=True,
+            samesite="strict",
+            secure=False,
+            max_age=1800,
+        )
+        return response
 
     @router.get("/analytics", response_class=HTMLResponse)
     def analytics_page(

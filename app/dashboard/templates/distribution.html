@@ -1,10 +1,68 @@
 {% extends "base.html" %}
 {% block heading %}Distribution Control Center{% endblock %}
 {% block content %}
+
+<section class="panel page-panel">
+    <p class="eyebrow">Mission Publishing Queue</p>
+    <h2>Publishing Queue Status</h2>
+</section>
+
+<section class="dashboard-grid">
+    {% for queue_item in operations.publishing_queue %}
+    <article class="panel">
+        <p class="eyebrow">Destination</p>
+        <h2>{{ queue_item.destination }}</h2>
+        <p><strong>Status:</strong> {{ queue_item.queue_status }}</p>
+        <p><strong>Approval State:</strong> {{ queue_item.approval_state or 'None' }}</p>
+        <p><strong>Hash:</strong> <code>{{ queue_item.manifest_hash[:8] }}...</code></p>
+
+        {% if queue_item.founder_note %}
+        <p><strong>Founder Note:</strong> {{ queue_item.founder_note }}</p>
+        {% endif %}
+
+        {% if queue_item.is_actionable %}
+        <form method="post" action="/missions/{{ queue_item.mission_id }}/publishing-queue/{{ queue_item.queue_item_id }}/decision" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="approval_id" value="{{ queue_item.approval_id }}">
+            <input type="hidden" name="content_hash" value="{{ queue_item.manifest_hash }}">
+
+            <label>Decision
+                <select name="decision" required style="width: 100%; padding: 0.25rem;">
+                    <option value="" disabled selected>Select...</option>
+                    <option value="approved">Approve</option>
+                    <option value="rejected">Reject</option>
+                    <option value="revision_requested">Request Revision</option>
+                </select>
+            </label>
+
+            <label>Reason (required for rejection/revision)
+                <textarea name="reason" rows="3" style="width: 100%; padding: 0.25rem;"></textarea>
+            </label>
+
+            <button type="submit" class="button" style="margin-top: 0.5rem;">Submit Decision</button>
+        </form>
+        {% else %}
+        <div style="margin-top: 1rem; padding: 1rem; background-color: var(--color-surface-sunken); border-radius: 4px;">
+            <p class="empty-state" style="margin: 0; font-size: 0.9em;">
+                <strong>Not Actionable</strong>
+                {% if queue_item.blocking_reason %}
+                    <br>{{ queue_item.blocking_reason }}
+                {% endif %}
+            </p>
+        </div>
+        {% endif %}
+    </article>
+    {% else %}
+    <article class="panel" style="grid-column: 1 / -1;">
+        <p class="empty-state">No active publishing queue items found across any mission.</p>
+    </article>
+    {% endfor %}
+</section>
+
 {% set package = snapshot.distribution %}
 {% if package %}
-<section class="panel page-panel">
-    <p class="eyebrow">Founder-controlled local preparation</p>
+<section class="panel page-panel" style="margin-top: 2rem;">
+    <p class="eyebrow">Legacy V1 Package</p>
     <h2>{{ package.publication_status.value | status_label }}</h2>
     <p>AuraAI prepared metadata and instructions only. Automatic publishing is disabled.</p>
     <p><strong>Source:</strong> {{ package.source_kind }} &middot; <strong>Automatic publishing:</strong> No</p>
@@ -40,7 +98,5 @@
         <ul>{% for note in package.thumbnail_package.safety_notes %}<li>{{ note }}</li>{% endfor %}</ul>
     </article>
 </section>
-{% else %}
-<section class="panel page-panel"><p class="empty-state">No local Distribution package supplied. Nothing has been published.</p></section>
 {% endif %}
 {% endblock %}

@@ -62,6 +62,7 @@ class ApprovalState(StrEnum):
     EXPIRED = "expired"
     REVOKED = "revoked"
     REVISION_REQUESTED = "revision_requested"
+    SUPERSEDED = "superseded"
 
 
 class ArtifactApprovalState(StrEnum):
@@ -133,6 +134,10 @@ class MissionRecord(AuraBaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     mission_score: float = Field(default=0.0, ge=0.0, le=100.0)
     reasoning_summary: str = Field(default="Pending generation rationale", min_length=1, max_length=3000)
+    publishing_generation: int = Field(default=0, ge=0)
+    publishing_generation_key: str | None = Field(default=None, max_length=200)
+    required_publish_destinations: list[str] = Field(default_factory=list)
+    blocking_reason: str | None = Field(default=None, max_length=2000)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -206,6 +211,8 @@ class ApprovalRequest(AuraBaseModel):
     mission_id: UUID
     task_id: UUID | None = None
     artifact_id: UUID | None = None
+    subject_type: str | None = Field(default=None, max_length=100)
+    subject_id: UUID | None = None
     requested_action: str = Field(min_length=1, max_length=150)
     risk: RiskLevel
     content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -296,6 +303,8 @@ class PublishingQueueStatus(StrEnum):
     READY_FOR_MANUAL_PUBLISH = "ready_for_manual_publish"
     AWAITING_MANUAL_PUBLISH_CONFIRMATION = "awaiting_manual_publish_confirmation"
     PUBLISHED_CONFIRMED = "published_confirmed"
+    REJECTED = "rejected"
+    REVISION_REQUESTED = "revision_requested"
 
 
 class RenderJob(AuraBaseModel):
@@ -313,6 +322,18 @@ import json
 
 AURA_QUEUE_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "queue.auraai.com")
 AURA_ARTIFACT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "artifacts.auraai.com")
+
+def normalize_destination(dest: str) -> str:
+    d = dest.strip().lower()
+    if not d:
+        raise ValueError("Destination cannot be empty")
+    return d
+
+def normalize_destinations(destinations: list[str]) -> list[str]:
+    normalized = set()
+    for d in destinations:
+        normalized.add(normalize_destination(d))
+    return sorted(list(normalized))
 
 def generate_manifest_hash(manifest: "PublishingManifest") -> str:
     encoded = json.dumps(
@@ -354,12 +375,36 @@ class PublishingQueueItem(AuraBaseModel):
     manifest_id: UUID
     source_package_id: UUID
     target_platforms: list[str]
+    destination: str = Field(default="legacy", min_length=1, max_length=150)
+    generation: int = Field(default=1, ge=1)
+    content_version: int = Field(default=1, ge=1)
+    is_active: bool = Field(default=True)
+    superseded_by: UUID | None = None
     manifest_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     status: PublishingQueueStatus = PublishingQueueStatus.AWAITING_PUBLISH_APPROVAL
     approval_id: UUID | None = None
+    founder_note: str | None = Field(default=None, max_length=2000)
     manual_confirmation_note: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+class AuraDomainError(Exception):
+    """Base domain exception."""
+
+class ItemNotFoundError(AuraDomainError):
+    pass
+
+class StaleContentError(AuraDomainError):
+    pass
+
+class ConflictingDecisionError(AuraDomainError):
+    pass
+
+class MalformedCommandError(AuraDomainError):
+    pass
+
+class MismatchError(AuraDomainError):
+    pass
 
 
 class MissionControlProjection(AuraBaseModel):

@@ -7,7 +7,14 @@ from uuid import UUID
 from pydantic import Field
 
 from core import AuraBaseModel
-from mission_control.models import MissionRecord, TaskRecord
+from mission_control.models import (
+    ApprovalRequest,
+    ApprovalState,
+    MalformedCommandError,
+    MissionRecord,
+    PublishingQueueItem,
+    TaskRecord,
+)
 from runtime_engine.runtime_manager import MissionRuntimeManager
 from runtime_engine.recovery import RecoveryReport
 
@@ -89,4 +96,36 @@ class MissionCommandService:
             executed=True,
             task=task,
             detail="Eligible task resume executed.",
+        )
+
+    def submit_publish_decision(
+        self,
+        *,
+        mission_id: UUID,
+        queue_item_id: UUID,
+        approval_id: UUID,
+        content_hash: str,
+        decision: ApprovalState,
+        reason: str | None,
+        actor: str,
+    ) -> tuple[PublishingQueueItem, ApprovalRequest]:
+        """Submit a publishing decision through the boundary."""
+        if not actor or not actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+
+        if decision not in {
+            ApprovalState.APPROVED,
+            ApprovalState.REJECTED,
+            ApprovalState.REVISION_REQUESTED,
+        }:
+            raise MalformedCommandError(f"Unsupported decision state: {decision}")
+
+        return self._runtime_manager.mission_control.apply_publish_decision(
+            mission_id=mission_id,
+            queue_item_id=queue_item_id,
+            approval_id=approval_id,
+            content_hash=content_hash,
+            decision=decision,
+            reason=reason,
+            actor=actor,
         )

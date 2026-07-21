@@ -610,6 +610,168 @@ class MissionControlService:
     def replay(self, mission_id: UUID) -> list[EventRecord]:
         return self.repository.list_events(mission_id)
 
+    def start_publishing_generation(
+        self, mission_id: UUID, destinations: list[str], generation_key: str
+    ) -> MissionRecord:
+        from mission_control.models import normalize_destinations, ConflictingDecisionError
+        with self.repository.transaction():
+            mission = self._mission(mission_id)
+            normalized = normalize_destinations(destinations)
+            if mission.publishing_generation > 0:
+                if mission.publishing_generation_key == generation_key:
+                    if mission.required_publish_destinations == normalized:
+                        return mission
+                    raise ConflictingDecisionError("Conflict: Same generation_key with different destinations.")
+            updated = mission.model_copy(update={
+                "publishing_generation": mission.publishing_generation + 1,
+                "publishing_generation_key": generation_key,
+                "required_publish_destinations": normalized,
+                "updated_at": utc_now()
+            })
+            self.repository.update_mission(updated)
+            self._event("publishing.generation_started", mission_id, payload={
+                "generation": updated.publishing_generation,
+                "generation_key": generation_key,
+                "destinations": normalized
+            })
+            return updated
+
+    def apply_publish_decision(
+        self,
+        mission_id: UUID,
+        queue_item_id: UUID,
+        approval_id: UUID,
+        content_hash: str,
+        decision: ApprovalState,
+        reason: str | None,
+        actor: str,
+    ) -> tuple[PublishingQueueItem, ApprovalRequest]:
+        from mission_control.models import PublishingQueueStatus, ConflictingDecisionError, ItemNotFoundError, StaleContentError, MismatchError, MalformedCommandError
+        import uuid
+
+        if decision in {ApprovalState.REJECTED, ApprovalState.REVISION_REQUESTED}:
+            if not reason or not reason.strip():
+                raise MalformedCommandError("A reason is required for rejection or revision requests.")
+
+        reason_val = reason.strip() if reason else ""
+
+        with self.repository.transaction():
+            queue_item = self.repository.get_publishing_queue_item(queue_item_id)
+            if queue_item is None:
+                raise ItemNotFoundError("Queue item not found.")
+
+            try:
+                mission = self._mission(mission_id)
+            except KeyError:
+                raise ItemNotFoundError("Mission not found.")
+
+            try:
+                approval = self._approval(approval_id)
+            except KeyError:
+                raise ItemNotFoundError("Approval not found.")
+
+            if queue_item.mission_id != mission_id:
+                raise MismatchError("Queue item mission ID mismatch.")
+            if approval.mission_id != mission_id:
+                raise MismatchError("Approval mission ID mismatch.")
+            if approval.subject_type != "publishing_queue_item":
+                raise MismatchError("Approval subject type is not publishing_queue_item.")
+            if approval.subject_id != queue_item_id:
+                raise MismatchError("Approval subject ID mismatch.")
+
+            if not queue_item.is_active:
+                raise ConflictingDecisionError("Queue item is not active.")
+            if queue_item.generation != mission.publishing_generation:
+                raise ConflictingDecisionError("Queue item generation mismatch.")
+
+            if content_hash != queue_item.manifest_hash:
+                raise StaleContentError("Submitted content hash mismatch.")
+            if approval.content_hash != queue_item.manifest_hash:
+                raise StaleContentError("Approval content hash mismatch.")
+
+            if approval.state == ApprovalState.SUPERSEDED:
+                raise ConflictingDecisionError("Approval is superseded.")
+
+            if queue_item.status in {PublishingQueueStatus.READY_FOR_MANUAL_PUBLISH, PublishingQueueStatus.PUBLISHED_CONFIRMED, PublishingQueueStatus.AWAITING_MANUAL_PUBLISH_CONFIRMATION}:
+                if decision == ApprovalState.APPROVED:
+                    return queue_item, approval
+                else:
+                    raise ConflictingDecisionError("Cannot regress already approved/published item.")
+
+            if queue_item.status == PublishingQueueStatus.REJECTED:
+                if decision == ApprovalState.REJECTED:
+                    return queue_item, approval
+                else:
+                    raise ConflictingDecisionError("Cannot alter rejected queue item. Start new generation.")
+
+            if queue_item.status == PublishingQueueStatus.REVISION_REQUESTED:
+                if decision == ApprovalState.REVISION_REQUESTED:
+                    if queue_item.founder_note == reason_val:
+                        return queue_item, approval
+                    raise ConflictingDecisionError("Cannot alter reason for revision. Start new generation.")
+                else:
+                    raise ConflictingDecisionError("Cannot alter revision request. Start new generation.")
+
+            if decision == ApprovalState.APPROVED:
+                q_status = PublishingQueueStatus.READY_FOR_MANUAL_PUBLISH
+            elif decision == ApprovalState.REJECTED:
+                q_status = PublishingQueueStatus.REJECTED
+            elif decision == ApprovalState.REVISION_REQUESTED:
+                q_status = PublishingQueueStatus.REVISION_REQUESTED
+            else:
+                raise MalformedCommandError("Unsupported founder publish decision.")
+
+            updated_queue = queue_item.model_copy(update={
+                "status": q_status,
+                "founder_note": reason_val,
+                "updated_at": utc_now()
+            })
+            self.repository.update_publishing_queue_item(updated_queue)
+
+            updated_approval = approval.model_copy(update={
+                "state": decision,
+                "approver": actor,
+                "reason": reason_val,
+                "decided_at": utc_now()
+            })
+            self.repository.save_approval(updated_approval)
+
+            event_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"publish_decision:{approval_id}:{decision.value}:{queue_item.manifest_hash}")
+            try:
+                self.repository.append_event(EventRecord(
+                    event_id=event_id,
+                    event_type="publish_decision.applied",
+                    mission_id=queue_item.mission_id,
+                    payload={
+                        "queue_item_id": str(queue_item_id),
+                        "approval_id": str(approval_id),
+                        "decision": decision.value,
+                        "reason": reason_val,
+                        "actor": actor
+                    }
+                ))
+            except Exception:
+                pass
+
+            self._evaluate_mission_publishing_readiness(queue_item.mission_id)
+            return updated_queue, updated_approval
+
+    def _evaluate_mission_publishing_readiness(self, mission_id: UUID) -> None:
+        from mission_control.models import PublishingQueueStatus
+        mission = self._mission(mission_id)
+        if mission.status != MissionControlStatus.AWAITING_PUBLISH_APPROVAL:
+            return
+
+        queue_items = self.repository.list_publishing_queue_items(mission_id)
+        ready_count = 0
+        for dest in mission.required_publish_destinations:
+            active = [q for q in queue_items if q.destination == dest and q.is_active and q.generation == mission.publishing_generation]
+            if len(active) == 1 and active[0].status == PublishingQueueStatus.READY_FOR_MANUAL_PUBLISH:
+                ready_count += 1
+
+        if ready_count == len(mission.required_publish_destinations) and ready_count > 0:
+            self.transition(mission_id, MissionControlStatus.READY_FOR_MANUAL_PUBLISH, stage="publish_approved")
+
     def projection(self) -> MissionControlProjection:
         tasks=self.repository.list_tasks(); approvals=self.repository.list_approvals()
         artifacts = self.repository.list_artifacts()
