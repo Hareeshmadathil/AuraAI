@@ -22,6 +22,10 @@
         <p><strong>Ruleset:</strong>
            <code>{{ latest_interpretation.ruleset_version }}</code></p>
         <p>{{ latest_interpretation.summary }}</p>
+        <a class="button"
+           href="/missions/{{ mission.mission_id }}/analytics/interpretations/{{ latest_interpretation.analytics_interpretation_id }}/lesson">
+            Review mission lesson
+        </a>
     </article>
     <article class="panel">
         <p class="eyebrow">Strengths</p>

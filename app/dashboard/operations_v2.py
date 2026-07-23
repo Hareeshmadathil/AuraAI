@@ -15,9 +15,13 @@ from mission_control.models import (
     ApprovalState,
     EventRecord,
     InterpretationFinding,
+    LessonEvidenceReference,
+    LessonFinding,
+    MissionLesson,
     MissionControlStatus,
 )
 from mission_control.analytics_interpretation import RULESET_VERSION
+from mission_control.mission_lessons import LESSON_RULESET_VERSION
 from mission_control.service import MissionControlService
 from web_intelligence.evidence_providers import create_default_evidence_registry
 
@@ -83,6 +87,30 @@ class CapabilityView(AuraBaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
 
 
+class DashboardMissionLesson(AuraBaseModel):
+    """Typed durable mission lesson history for one interpretation."""
+
+    latest_lesson: MissionLesson | None = None
+    lesson_history: list[MissionLesson] = Field(default_factory=list)
+    lesson_count: int = 0
+    ruleset_version: str = LESSON_RULESET_VERSION
+    confidence: str | None = None
+    summary: str | None = None
+    findings: list[LessonFinding] = Field(default_factory=list)
+    evidence_references: list[LessonEvidenceReference] = Field(
+        default_factory=list
+    )
+    strengths: list[LessonFinding] = Field(default_factory=list)
+    weaknesses: list[LessonFinding] = Field(default_factory=list)
+    unknowns: list[LessonFinding] = Field(default_factory=list)
+    created_at: str | None = None
+    source_analytics_interpretation_id: UUID | None = None
+    source_analytics_snapshot_id: UUID | None = None
+    lesson_available: bool = False
+    lesson_actionable: bool = False
+    lesson_blocking_reason: str | None = None
+
+
 
 class DashboardAnalyticsInterpretation(AuraBaseModel):
     """Typed durable interpretation history for one publication."""
@@ -103,6 +131,9 @@ class DashboardAnalyticsInterpretation(AuraBaseModel):
     interpretation_available: bool = False
     interpretation_actionable: bool = False
     interpretation_blocking_reason: str | None = None
+    lesson: DashboardMissionLesson = Field(
+        default_factory=DashboardMissionLesson
+    )
 
 
 class DashboardPublicationAnalytics(AuraBaseModel):
@@ -245,6 +276,17 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
             latest_interpretation = (
                 interpretations[0] if interpretations else None
             )
+            lessons = control.repository.list_mission_lessons(
+                pub_record.publication_id
+            )
+            latest_lesson = lessons[0] if lessons else None
+            current_lesson_exists = bool(
+                latest_interpretation
+                and control.repository.find_interpretation_ruleset_lesson(
+                    latest_interpretation.analytics_interpretation_id,
+                    LESSON_RULESET_VERSION,
+                )
+            )
             current_exists = bool(
                 latest
                 and control.repository.find_snapshot_ruleset_interpretation(
@@ -318,6 +360,74 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
                             if latest
                             else "No analytics snapshot is available."
                         )
+                    ),
+                    lesson=DashboardMissionLesson(
+                        latest_lesson=latest_lesson,
+                        lesson_history=lessons[1:],
+                        lesson_count=len(lessons),
+                        confidence=(
+                            latest_lesson.confidence.value
+                            if latest_lesson
+                            else None
+                        ),
+                        summary=(
+                            latest_lesson.summary if latest_lesson else None
+                        ),
+                        findings=(
+                            list(latest_lesson.findings)
+                            if latest_lesson
+                            else []
+                        ),
+                        evidence_references=(
+                            list(latest_lesson.evidence_references)
+                            if latest_lesson
+                            else []
+                        ),
+                        strengths=(
+                            list(latest_lesson.strengths)
+                            if latest_lesson
+                            else []
+                        ),
+                        weaknesses=(
+                            list(latest_lesson.weaknesses)
+                            if latest_lesson
+                            else []
+                        ),
+                        unknowns=(
+                            list(latest_lesson.unknowns)
+                            if latest_lesson
+                            else []
+                        ),
+                        created_at=(
+                            latest_lesson.created_at.isoformat()
+                            if latest_lesson
+                            else None
+                        ),
+                        source_analytics_interpretation_id=(
+                            latest_interpretation.analytics_interpretation_id
+                            if latest_interpretation
+                            else None
+                        ),
+                        source_analytics_snapshot_id=(
+                            latest_interpretation.analytics_snapshot_id
+                            if latest_interpretation
+                            else None
+                        ),
+                        lesson_available=bool(lessons),
+                        lesson_actionable=bool(
+                            latest_interpretation
+                            and not current_lesson_exists
+                        ),
+                        lesson_blocking_reason=(
+                            None
+                            if latest_interpretation
+                            and not current_lesson_exists
+                            else (
+                                "Current ruleset lesson already exists."
+                                if latest_interpretation
+                                else "No analytics interpretation is available."
+                            )
+                        ),
                     ),
                 ),
             )

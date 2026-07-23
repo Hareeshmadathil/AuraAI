@@ -14,6 +14,12 @@ from mission_control.analytics_interpretation import (
     build_interpretation_payload,
     interpretation_payload_hash,
 )
+from mission_control.mission_lessons import (
+    LESSON_RULESET_VERSION,
+    SUPPORTED_LESSON_RULESETS,
+    build_mission_lesson_payload,
+    mission_lesson_payload_hash,
+)
 from mission_control.models import (
     AnalyticsInterpretation,
     AnalyticsMetrics,
@@ -24,7 +30,7 @@ from mission_control.models import (
     FailureClassification, ItemNotFoundError, MalformedCommandError,
     MismatchError,
     RepositoryConsistencyError, RepositoryIntegrityError, StaleContentError,
-    ConflictingDecisionError, TaskCheckpoint,
+    ConflictingDecisionError, MissionLesson, TaskCheckpoint,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
     PublishingQueueStatus, RiskLevel, TaskRecord, TaskStatus, RenderJob,
     PublishingQueueItem, require_utc_datetime,
@@ -1186,6 +1192,183 @@ class MissionControlService:
                 "Concurrent analytics interpretation conflicts with deterministic output."
             )
         return interpretation
+
+    def create_mission_lesson(
+        self,
+        *,
+        mission_id: UUID,
+        analytics_interpretation_id: UUID,
+        created_by_actor: str,
+        lesson_ruleset_version: str = LESSON_RULESET_VERSION,
+    ) -> MissionLesson:
+        """Create one deterministic lesson from a durable interpretation."""
+
+        actor = created_by_actor.strip()
+        if not actor:
+            raise MalformedCommandError("An actor must be specified.")
+        if lesson_ruleset_version not in SUPPORTED_LESSON_RULESETS:
+            raise MalformedCommandError(
+                f"Unsupported mission lesson ruleset: {lesson_ruleset_version}"
+            )
+        mission = self.repository.get_mission(mission_id)
+        if mission is None:
+            raise ItemNotFoundError("Mission not found.")
+        interpretation = self.repository.find_interpretation_by_id(
+            analytics_interpretation_id
+        )
+        if interpretation is None:
+            raise ItemNotFoundError("Analytics interpretation not found.")
+        if interpretation.mission_id != mission_id:
+            raise MismatchError("Analytics interpretation mission ID mismatch.")
+        snapshot = self.repository.find_snapshot_by_id(
+            interpretation.analytics_snapshot_id
+        )
+        if snapshot is None:
+            raise ItemNotFoundError("Analytics snapshot not found.")
+        publication = self.repository.get_publication_record_by_id(
+            interpretation.publication_id
+        )
+        if publication is None:
+            raise ItemNotFoundError("Publication record not found.")
+        queue_item = self.repository.get_publishing_queue_item(
+            interpretation.queue_item_id
+        )
+        if queue_item is None:
+            raise ItemNotFoundError("Publishing queue item not found.")
+
+        identities = (
+            snapshot.mission_id == mission_id,
+            publication.mission_id == mission_id,
+            queue_item.mission_id == mission_id,
+            snapshot.publication_id == interpretation.publication_id,
+            snapshot.queue_item_id == interpretation.queue_item_id,
+            publication.queue_item_id == interpretation.queue_item_id,
+            snapshot.destination == interpretation.destination,
+            publication.destination == interpretation.destination,
+            queue_item.destination == interpretation.destination,
+            publication.content_hash == queue_item.manifest_hash,
+        )
+        if not all(identities):
+            raise MismatchError(
+                "Mission lesson source identity chain is inconsistent."
+            )
+
+        authoritative_payload = build_interpretation_payload(
+            snapshot,
+            ruleset_version=interpretation.ruleset_version,
+        )
+        if (
+            interpretation_payload_hash(authoritative_payload)
+            != interpretation.payload_hash
+        ):
+            raise StaleContentError(
+                "Stored analytics interpretation is not authoritative."
+            )
+        authoritative_fields = {
+            "overall_classification": (
+                authoritative_payload.overall_classification
+            ),
+            "confidence": authoritative_payload.confidence,
+            "metric_interpretations": (
+                authoritative_payload.metric_interpretations
+            ),
+            "strengths": authoritative_payload.strengths,
+            "weaknesses": authoritative_payload.weaknesses,
+            "missing_evidence": authoritative_payload.missing_evidence,
+            "summary": authoritative_payload.summary,
+        }
+        if any(
+            getattr(interpretation, name) != value
+            for name, value in authoritative_fields.items()
+        ):
+            raise StaleContentError(
+                "Stored analytics interpretation content is inconsistent."
+            )
+
+        payload = build_mission_lesson_payload(
+            interpretation,
+            lesson_ruleset_version=lesson_ruleset_version,
+        )
+        payload_hash = mission_lesson_payload_hash(payload)
+        existing = self.repository.find_interpretation_ruleset_lesson(
+            analytics_interpretation_id,
+            lesson_ruleset_version,
+        )
+        if existing is not None:
+            if existing.payload_hash == payload_hash:
+                return existing
+            raise ConflictingDecisionError(
+                "Stored mission lesson conflicts with deterministic output."
+            )
+
+        created_at = utc_now()
+        lesson = MissionLesson(
+            mission_id=mission_id,
+            publication_id=interpretation.publication_id,
+            queue_item_id=interpretation.queue_item_id,
+            analytics_snapshot_id=interpretation.analytics_snapshot_id,
+            analytics_interpretation_id=analytics_interpretation_id,
+            destination=interpretation.destination,
+            lesson_ruleset_version=lesson_ruleset_version,
+            created_at=created_at,
+            created_by_actor=actor,
+            payload_hash=payload_hash,
+            confidence=payload.confidence,
+            summary=payload.summary,
+            findings=payload.findings,
+            evidence_references=payload.evidence_references,
+            strengths=payload.strengths,
+            weaknesses=payload.weaknesses,
+            unknowns=payload.unknowns,
+        )
+        try:
+            with self.repository.transaction():
+                self.repository.save_mission_lesson(lesson)
+                self.repository.append_event(
+                    EventRecord(
+                        mission_id=mission_id,
+                        event_type="analytics.lesson_created",
+                        payload={
+                            "mission_lesson_id": str(
+                                lesson.mission_lesson_id
+                            ),
+                            "analytics_interpretation_id": str(
+                                analytics_interpretation_id
+                            ),
+                            "analytics_snapshot_id": str(
+                                interpretation.analytics_snapshot_id
+                            ),
+                            "publication_id": str(
+                                interpretation.publication_id
+                            ),
+                            "queue_item_id": str(
+                                interpretation.queue_item_id
+                            ),
+                            "mission_id": str(mission_id),
+                            "destination": interpretation.destination,
+                            "lesson_ruleset_version": lesson_ruleset_version,
+                            "confidence": lesson.confidence.value,
+                            "created_at": created_at.isoformat(),
+                            "actor": actor,
+                            "payload_hash": payload_hash,
+                        },
+                    )
+                )
+        except DuplicateRecordError:
+            winner = self.repository.find_interpretation_ruleset_lesson(
+                analytics_interpretation_id,
+                lesson_ruleset_version,
+            )
+            if winner is None:
+                raise RepositoryConsistencyError(
+                    "Expected duplicate mission lesson but no winner exists."
+                )
+            if winner.payload_hash == payload_hash:
+                return winner
+            raise ConflictingDecisionError(
+                "Concurrent mission lesson conflicts with deterministic output."
+            )
+        return lesson
 
 class DepartmentBus:
     """Synchronous injected bus; it never starts background or external work."""

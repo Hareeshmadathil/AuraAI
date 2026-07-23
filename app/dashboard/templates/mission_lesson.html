@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block heading %}Mission Lesson{% endblock %}
+{% block content %}
+
+<section class="panel page-panel">
+    <p class="eyebrow">{{ mission.title }} · {{ publication.destination }}</p>
+    <h2>Deterministic mission lesson</h2>
+    <p>This view converts one immutable analytics interpretation into a
+       versioned, evidence-linked lesson. It does not recommend or execute
+       actions, change mission state, or trigger external operations.</p>
+    <p><strong>Source interpretation:</strong>
+       <code>{{ source_interpretation.analytics_interpretation_id }}</code></p>
+    <p><strong>Source snapshot:</strong>
+       <code>{{ source_snapshot.analytics_snapshot_id }}</code></p>
+</section>
+
+{% if latest_lesson %}
+<section class="dashboard-grid">
+    <article class="panel">
+        <p class="eyebrow">Latest lesson</p>
+        <h3>{{ latest_lesson.confidence.value | status_label }} confidence</h3>
+        <p><strong>Ruleset:</strong>
+           <code>{{ latest_lesson.lesson_ruleset_version }}</code></p>
+        <p>{{ latest_lesson.summary }}</p>
+        <p><strong>Payload hash:</strong>
+           <code>{{ latest_lesson.payload_hash }}</code></p>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Strengths</p>
+        {% if latest_lesson.strengths %}
+        <ul>{% for finding in latest_lesson.strengths %}
+            <li>{{ finding.statement }}</li>
+        {% endfor %}</ul>
+        {% else %}<p>No strength is supported by the source evidence.</p>{% endif %}
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Weaknesses</p>
+        {% if latest_lesson.weaknesses %}
+        <ul>{% for finding in latest_lesson.weaknesses %}
+            <li>{{ finding.statement }}</li>
+        {% endfor %}</ul>
+        {% else %}<p>No weakness is supported by the source evidence.</p>{% endif %}
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Unknowns</p>
+        {% if latest_lesson.unknowns %}
+        <ul>{% for finding in latest_lesson.unknowns %}
+            <li>{{ finding.statement }}</li>
+        {% endfor %}</ul>
+        {% else %}<p>No evidence gap was classified.</p>{% endif %}
+    </article>
+</section>
+
+<section class="panel page-panel">
+    <p class="eyebrow">Evidence provenance</p>
+    <ul>{% for reference in latest_lesson.evidence_references %}
+        <li>
+            {{ reference.metric_names | join(", ") }} ·
+            {{ reference.classification.value | status_label }} ·
+            {{ reference.evidence_state.value | status_label }} ·
+            <code>{{ reference.interpretation_rule_id }}</code>
+        </li>
+    {% endfor %}</ul>
+</section>
+{% else %}
+<section class="panel page-panel">
+    <p>No lesson exists for this interpretation and current ruleset.</p>
+    <form method="post"
+          action="/missions/{{ mission.mission_id }}/analytics/interpretations/{{ source_interpretation.analytics_interpretation_id }}/lesson">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="button">Create deterministic lesson</button>
+    </form>
+</section>
+{% endif %}
+
+{% if lesson_history %}
+<section class="panel page-panel">
+    <p class="eyebrow">Lesson history</p>
+    <ul>{% for lesson in lesson_history %}
+        <li>{{ lesson.created_at.isoformat() }} ·
+            {{ lesson.lesson_ruleset_version }} ·
+            {{ lesson.confidence.value | status_label }}</li>
+    {% endfor %}</ul>
+</section>
+{% endif %}
+
+{% endblock %}

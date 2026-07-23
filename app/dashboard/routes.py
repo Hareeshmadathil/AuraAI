@@ -83,6 +83,15 @@ class AnalyticsInterpretationForm(BaseModel):
 
     csrf_token: str = Field(min_length=32, max_length=200)
 
+
+class MissionLessonForm(BaseModel):
+    """CSRF-only request for authoritative mission lesson creation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    csrf_token: str = Field(min_length=32, max_length=200)
+
+
 class FounderDecisionForm(BaseModel):
     """Strict hash-bound local founder mutation payload."""
 
@@ -1123,6 +1132,171 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
                 ),
                 "interpretation_history": interpretations[1:],
                 "interpretation_count": len(interpretations),
+                "csrf_token": csrf_token,
+            },
+        )
+        response.set_cookie(
+            "auraai_csrf",
+            csrf_token,
+            httponly=True,
+            samesite="strict",
+            secure=False,
+            max_age=1800,
+        )
+        return response
+
+    @router.post(
+        "/missions/{mission_id}/analytics/interpretations/"
+        "{analytics_interpretation_id}/lesson",
+        response_class=RedirectResponse,
+    )
+    async def create_mission_lesson(
+        mission_id: UUID,
+        analytics_interpretation_id: UUID,
+        request: Request,
+    ) -> RedirectResponse:
+        """Create one deterministic lesson through Mission Control."""
+
+        from mission_control.models import (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        )
+
+        require_local(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(
+                status_code=415,
+                detail="Unsupported form content type.",
+            )
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Form is too large.")
+        try:
+            values = parse_qs(
+                body.decode("utf-8"),
+                keep_blank_values=True,
+                strict_parsing=True,
+            )
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form = MissionLessonForm.model_validate(
+                {key: value[0] for key, value in values.items()}
+            )
+        except (UnicodeDecodeError, ValueError, ValidationError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid mission lesson form.",
+            ) from error
+        cookie_token = request.cookies.get("auraai_csrf", "")
+        if not cookie_token or not secrets.compare_digest(
+            cookie_token,
+            form.csrf_token,
+        ):
+            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+        try:
+            mission_commands(request).create_mission_lesson(
+                mission_id=mission_id,
+                analytics_interpretation_id=analytics_interpretation_id,
+                actor="Local Founder",
+            )
+        except ItemNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except (ConflictingDecisionError, StaleContentError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except (MismatchError, MalformedCommandError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except (RepositoryIntegrityError, RepositoryConsistencyError) as error:
+            raise HTTPException(
+                status_code=503,
+                detail="Mission lesson persistence is unavailable.",
+            ) from error
+        return RedirectResponse(
+            url=request.url_for(
+                "mission_lesson_page",
+                mission_id=mission_id,
+                analytics_interpretation_id=analytics_interpretation_id,
+            ),
+            status_code=303,
+        )
+
+    @router.get(
+        "/missions/{mission_id}/analytics/interpretations/"
+        "{analytics_interpretation_id}/lesson",
+        response_class=HTMLResponse,
+    )
+    def mission_lesson_page(
+        mission_id: UUID,
+        analytics_interpretation_id: UUID,
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render the durable interpretation and its mission lesson history."""
+
+        require_local(request)
+        control = mission_control(request)
+        mission = control.repository.get_mission(mission_id)
+        if mission is None:
+            raise HTTPException(status_code=404, detail="Mission was not found.")
+        interpretation = (
+            control.repository.find_interpretation_by_id(
+                analytics_interpretation_id
+            )
+        )
+        if interpretation is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Analytics interpretation was not found.",
+            )
+        if interpretation.mission_id != mission_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Analytics interpretation mission ID mismatch.",
+            )
+        snapshot = control.repository.find_snapshot_by_id(
+            interpretation.analytics_snapshot_id
+        )
+        if snapshot is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Analytics snapshot was not found.",
+            )
+        publication = control.repository.get_publication_record_by_id(
+            interpretation.publication_id
+        )
+        if publication is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Publication was not found.",
+            )
+        lessons = [
+            item
+            for item in control.repository.list_mission_lessons(
+                interpretation.publication_id
+            )
+            if item.analytics_interpretation_id
+            == analytics_interpretation_id
+        ]
+        csrf_token = secrets.token_urlsafe(32)
+        response = render(
+            request=request,
+            service=service,
+            template_name="mission_lesson.html",
+            page_title="Mission Lesson",
+            active_path="/analytics",
+            extra_context={
+                "mission": mission,
+                "publication": publication,
+                "source_snapshot": snapshot,
+                "source_interpretation": interpretation,
+                "latest_lesson": lessons[0] if lessons else None,
+                "lesson_history": lessons[1:],
+                "lesson_count": len(lessons),
                 "csrf_token": csrf_token,
             },
         )

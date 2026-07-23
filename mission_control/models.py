@@ -592,6 +592,92 @@ class AnalyticsInterpretation(AuraBaseModel):
         return require_utc_datetime(value, field_name="interpreted_at")
 
 
+class LessonCategory(StrEnum):
+    """Evidence-backed lesson categories without action semantics."""
+
+    PERFORMANCE_STRENGTH = "performance_strength"
+    PERFORMANCE_WEAKNESS = "performance_weakness"
+    EVIDENCE_GAP = "evidence_gap"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    OBSERVATION = "observation"
+
+
+class LessonConfidence(StrEnum):
+    """Deterministic confidence inherited from interpretation evidence."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class LessonEvidenceState(StrEnum):
+    """Lesson-level preservation of interpretation evidence state."""
+
+    AVAILABLE = "available"
+    ZERO = "zero"
+    MISSING = "missing"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class LessonEvidenceReference(AuraBaseModel):
+    """Traceable reference to one authoritative interpretation result."""
+
+    model_config = ConfigDict(frozen=True)
+
+    analytics_interpretation_id: UUID
+    analytics_snapshot_id: UUID
+    metric_names: tuple[str, ...]
+    classification: InterpretationClassification
+    evidence_state: LessonEvidenceState
+    interpretation_rule_id: str = Field(min_length=1, max_length=150)
+
+
+class LessonFinding(AuraBaseModel):
+    """One deterministic evidence-backed statement of established fact."""
+
+    model_config = ConfigDict(frozen=True)
+
+    category: LessonCategory
+    confidence: LessonConfidence
+    statement: str = Field(min_length=1, max_length=1000)
+    source_interpretation_id: UUID
+    source_metric_names: tuple[str, ...]
+    source_classification: InterpretationClassification
+    source_evidence_state: LessonEvidenceState
+    source_rule_ids: tuple[str, ...]
+    evidence_references: tuple[LessonEvidenceReference, ...]
+
+
+class MissionLesson(AuraBaseModel):
+    """Durable deterministic knowledge from one interpretation."""
+
+    model_config = ConfigDict(frozen=True)
+
+    mission_lesson_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    publication_id: UUID
+    queue_item_id: UUID
+    analytics_snapshot_id: UUID
+    analytics_interpretation_id: UUID
+    destination: str = Field(min_length=1, max_length=150)
+    lesson_ruleset_version: str = Field(min_length=1, max_length=100)
+    created_at: datetime
+    created_by_actor: str = Field(min_length=1, max_length=150)
+    payload_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confidence: LessonConfidence
+    summary: str = Field(min_length=1, max_length=3000)
+    findings: tuple[LessonFinding, ...]
+    evidence_references: tuple[LessonEvidenceReference, ...]
+    strengths: tuple[LessonFinding, ...] = ()
+    weaknesses: tuple[LessonFinding, ...] = ()
+    unknowns: tuple[LessonFinding, ...] = ()
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return require_utc_datetime(value, field_name="created_at")
+
+
 
 class MissionControlProjection(AuraBaseModel):
     missions: list[MissionRecord]

@@ -23,6 +23,7 @@ from mission_control.models import (
     EventRecord,
     ExecutionAttempt,
     MissionRecord,
+    MissionLesson,
     TaskCheckpoint,
     TaskRecord,
     TaskStatus,
@@ -138,6 +139,24 @@ class MissionControlRepository(ABC):
         publication_id: UUID,
     ) -> list[AnalyticsInterpretation]: ...
     @abstractmethod
+    def save_mission_lesson(self, lesson: MissionLesson) -> None: ...
+    @abstractmethod
+    def find_mission_lesson_by_id(
+        self,
+        lesson_id: UUID,
+    ) -> MissionLesson | None: ...
+    @abstractmethod
+    def find_interpretation_ruleset_lesson(
+        self,
+        analytics_interpretation_id: UUID,
+        lesson_ruleset_version: str,
+    ) -> MissionLesson | None: ...
+    @abstractmethod
+    def list_mission_lessons(
+        self,
+        publication_id: UUID,
+    ) -> list[MissionLesson]: ...
+    @abstractmethod
     @contextmanager
     def transaction(self) -> Iterator[None]: ...
 
@@ -156,6 +175,7 @@ class InMemoryMissionControlRepository(MissionControlRepository):
         self.publication_records: dict[UUID, PublicationRecord] = {}
         self.analytics_snapshots: dict[UUID, AnalyticsSnapshot] = {}
         self.analytics_interpretations: dict[UUID, AnalyticsInterpretation] = {}
+        self.mission_lessons: dict[UUID, MissionLesson] = {}
         self._lock = threading.RLock()
 
     @contextmanager
@@ -338,10 +358,70 @@ class InMemoryMissionControlRepository(MissionControlRepository):
             reverse=True,
         )
 
+    def save_mission_lesson(self, lesson: MissionLesson) -> None:
+        with self._lock:
+            if self.find_interpretation_ruleset_lesson(
+                lesson.analytics_interpretation_id,
+                lesson.lesson_ruleset_version,
+            ) is not None:
+                raise DuplicateRecordError(
+                    "Mission lesson already exists for this interpretation "
+                    "and ruleset."
+                )
+            self._insert(
+                self.mission_lessons,
+                lesson.mission_lesson_id,
+                lesson,
+            )
+
+    def find_mission_lesson_by_id(
+        self,
+        lesson_id: UUID,
+    ) -> MissionLesson | None:
+        with self._lock:
+            value = self.mission_lessons.get(lesson_id)
+            return value.model_copy(deep=True) if value else None
+
+    def find_interpretation_ruleset_lesson(
+        self,
+        analytics_interpretation_id: UUID,
+        lesson_ruleset_version: str,
+    ) -> MissionLesson | None:
+        with self._lock:
+            return next(
+                (
+                    value.model_copy(deep=True)
+                    for value in self.mission_lessons.values()
+                    if value.analytics_interpretation_id
+                    == analytics_interpretation_id
+                    and value.lesson_ruleset_version == lesson_ruleset_version
+                ),
+                None,
+            )
+
+    def list_mission_lessons(
+        self,
+        publication_id: UUID,
+    ) -> list[MissionLesson]:
+        with self._lock:
+            values = [
+                value.model_copy(deep=True)
+                for value in self.mission_lessons.values()
+                if value.publication_id == publication_id
+            ]
+        return sorted(
+            values,
+            key=lambda value: (
+                value.created_at,
+                value.mission_lesson_id.int,
+            ),
+            reverse=True,
+        )
+
 
 class SQLiteMissionControlRepository(MissionControlRepository):
     """SQLite JSON-record repository with foreign keys and atomic writes."""
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(self, database_path: Path, *, allowed_root: Path) -> None:
         root = allowed_root.resolve()
@@ -398,11 +478,41 @@ class SQLiteMissionControlRepository(MissionControlRepository):
             );
             CREATE INDEX IF NOT EXISTS idx_interpretations_publication_time
             ON analytics_interpretations(publication_id, interpreted_at DESC);
+            CREATE TABLE IF NOT EXISTS mission_lessons(
+                id TEXT PRIMARY KEY,
+                mission_id TEXT NOT NULL REFERENCES missions(id),
+                publication_id TEXT NOT NULL REFERENCES publication_records(id),
+                queue_item_id TEXT NOT NULL REFERENCES publishing_queue(id),
+                analytics_snapshot_id TEXT NOT NULL REFERENCES analytics_snapshots(id),
+                analytics_interpretation_id TEXT NOT NULL REFERENCES analytics_interpretations(id),
+                destination TEXT NOT NULL,
+                lesson_ruleset_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                data TEXT NOT NULL,
+                UNIQUE(analytics_interpretation_id, lesson_ruleset_version)
+            );
+            CREATE INDEX IF NOT EXISTS idx_lessons_publication_time
+            ON mission_lessons(publication_id, created_at DESC);
             """)
-            row=self.connection.execute("SELECT version FROM schema_version").fetchone()
-            if row is None: self.connection.execute("INSERT INTO schema_version(version) VALUES (?)",(self.SCHEMA_VERSION,))
-            elif row[0] in {1, 2}: self.connection.execute("UPDATE schema_version SET version = ?", (self.SCHEMA_VERSION,))
-            elif row[0] != self.SCHEMA_VERSION: raise RuntimeError("Unsupported Mission Control schema version.")
+            row = self.connection.execute(
+                "SELECT version FROM schema_version"
+            ).fetchone()
+            if row is None:
+                self.connection.execute(
+                    "INSERT INTO schema_version(version) VALUES (?)",
+                    (self.SCHEMA_VERSION,),
+                )
+            elif row[0] in {1, 2, 3}:
+                self.connection.execute(
+                    "UPDATE schema_version SET version = ?",
+                    (self.SCHEMA_VERSION,),
+                )
+            elif row[0] != self.SCHEMA_VERSION:
+                raise RuntimeError(
+                    "Unsupported Mission Control schema version."
+                )
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -702,3 +812,80 @@ class SQLiteMissionControlRepository(MissionControlRepository):
                 AnalyticsInterpretation.model_validate_json(row[0])
                 for row in rows
             ]
+
+    def save_mission_lesson(self, lesson: MissionLesson) -> None:
+        with self._lock:
+            try:
+                self.connection.execute(
+                    "INSERT INTO mission_lessons("
+                    "id, mission_id, publication_id, queue_item_id, "
+                    "analytics_snapshot_id, analytics_interpretation_id, "
+                    "destination, lesson_ruleset_version, created_at, actor, "
+                    "payload_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(lesson.mission_lesson_id),
+                        str(lesson.mission_id),
+                        str(lesson.publication_id),
+                        str(lesson.queue_item_id),
+                        str(lesson.analytics_snapshot_id),
+                        str(lesson.analytics_interpretation_id),
+                        lesson.destination,
+                        lesson.lesson_ruleset_version,
+                        lesson.created_at.isoformat(),
+                        lesson.created_by_actor,
+                        lesson.payload_hash,
+                        lesson.model_dump_json(),
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                message = str(error).lower()
+                expected = (
+                    "unique constraint failed: "
+                    "mission_lessons.analytics_interpretation_id, "
+                    "mission_lessons.lesson_ruleset_version"
+                )
+                if expected in message:
+                    raise DuplicateRecordError(
+                        "Mission lesson already exists for this interpretation "
+                        "and ruleset."
+                    ) from error
+                raise RepositoryIntegrityError(
+                    f"Database integrity error: {error}"
+                ) from error
+
+    def find_mission_lesson_by_id(
+        self,
+        lesson_id: UUID,
+    ) -> MissionLesson | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM mission_lessons WHERE id = ?",
+                (str(lesson_id),),
+            ).fetchone()
+            return MissionLesson.model_validate_json(row[0]) if row else None
+
+    def find_interpretation_ruleset_lesson(
+        self,
+        analytics_interpretation_id: UUID,
+        lesson_ruleset_version: str,
+    ) -> MissionLesson | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM mission_lessons "
+                "WHERE analytics_interpretation_id = ? "
+                "AND lesson_ruleset_version = ?",
+                (str(analytics_interpretation_id), lesson_ruleset_version),
+            ).fetchone()
+            return MissionLesson.model_validate_json(row[0]) if row else None
+
+    def list_mission_lessons(
+        self,
+        publication_id: UUID,
+    ) -> list[MissionLesson]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT data FROM mission_lessons WHERE publication_id = ? "
+                "ORDER BY created_at DESC, id DESC",
+                (str(publication_id),),
+            ).fetchall()
+            return [MissionLesson.model_validate_json(row[0]) for row in rows]

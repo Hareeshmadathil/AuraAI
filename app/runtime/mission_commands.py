@@ -12,6 +12,7 @@ from mission_control.models import (
     ApprovalRequest,
     ApprovalState,
     MalformedCommandError,
+    MissionLesson,
     MissionRecord,
     PublishingQueueItem,
     TaskRecord,
@@ -204,4 +205,21 @@ class MissionCommandService:
             mission_id=mission_id,
             analytics_snapshot_id=analytics_snapshot_id,
             interpreted_by_actor=actor,
+        )
+
+    def create_mission_lesson(
+        self,
+        *,
+        mission_id: UUID,
+        analytics_interpretation_id: UUID,
+        actor: str,
+    ) -> MissionLesson:
+        """Request authoritative mission lesson creation."""
+
+        if not actor or not actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+        return self._runtime_manager.mission_control.create_mission_lesson(
+            mission_id=mission_id,
+            analytics_interpretation_id=analytics_interpretation_id,
+            created_by_actor=actor,
         )
