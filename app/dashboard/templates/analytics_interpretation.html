@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block heading %}Analytics Interpretation{% endblock %}
+{% block content %}
+
+<section class="panel page-panel">
+    <p class="eyebrow">{{ mission.title }} · {{ publication.destination }}</p>
+    <h2>Deterministic evidence interpretation</h2>
+    <p>This view applies versioned rules to one immutable analytics snapshot.
+       It does not recommend actions, create lessons, or advance the mission.</p>
+    <p><strong>Source snapshot:</strong>
+       <code>{{ source_snapshot.analytics_snapshot_id }}</code></p>
+    <p><strong>Observed:</strong> {{ source_snapshot.observed_at.isoformat() }}</p>
+</section>
+
+{% if latest_interpretation %}
+<section class="dashboard-grid">
+    <article class="panel">
+        <p class="eyebrow">Latest interpretation</p>
+        <h3>{{ latest_interpretation.overall_classification.value | status_label }}</h3>
+        <p><strong>Confidence:</strong>
+           {{ latest_interpretation.confidence.value | status_label }}</p>
+        <p><strong>Ruleset:</strong>
+           <code>{{ latest_interpretation.ruleset_version }}</code></p>
+        <p>{{ latest_interpretation.summary }}</p>
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Strengths</p>
+        {% if latest_interpretation.strengths %}
+        <ul>{% for finding in latest_interpretation.strengths %}
+            <li>{{ finding.explanation }} <code>{{ finding.rule_id }}</code></li>
+        {% endfor %}</ul>
+        {% else %}<p>No strength classification is supported by the available evidence.</p>{% endif %}
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Weaknesses</p>
+        {% if latest_interpretation.weaknesses %}
+        <ul>{% for finding in latest_interpretation.weaknesses %}
+            <li>{{ finding.explanation }} <code>{{ finding.rule_id }}</code></li>
+        {% endfor %}</ul>
+        {% else %}<p>No weakness classification is supported by the available evidence.</p>{% endif %}
+    </article>
+    <article class="panel">
+        <p class="eyebrow">Missing evidence</p>
+        {% if latest_interpretation.missing_evidence %}
+        <ul>{% for finding in latest_interpretation.missing_evidence %}
+            <li>{{ finding.explanation }} <code>{{ finding.rule_id }}</code></li>
+        {% endfor %}</ul>
+        {% else %}<p>No required interpretation evidence is missing.</p>{% endif %}
+    </article>
+</section>
+{% else %}
+<section class="panel page-panel">
+    <p>No interpretation exists for this snapshot and current ruleset.</p>
+    <form method="post"
+          action="/missions/{{ mission.mission_id }}/analytics/{{ source_snapshot.analytics_snapshot_id }}/interpret">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="button">Interpret snapshot deterministically</button>
+    </form>
+</section>
+{% endif %}
+
+{% if interpretation_history %}
+<section class="panel page-panel">
+    <p class="eyebrow">Interpretation history</p>
+    <ul>{% for interpretation in interpretation_history %}
+        <li>{{ interpretation.interpreted_at.isoformat() }} ·
+            {{ interpretation.ruleset_version }} ·
+            {{ interpretation.overall_classification.value | status_label }}</li>
+    {% endfor %}</ul>
+</section>
+{% endif %}
+
+{% endblock %}

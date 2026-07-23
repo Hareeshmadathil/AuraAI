@@ -15,6 +15,7 @@ from mission_control.models import (
     MissionRecord,
     PublishingQueueItem,
     TaskRecord,
+    AnalyticsInterpretation,
     AnalyticsMetrics,
     AnalyticsSnapshot,
 )
@@ -186,4 +187,21 @@ class MissionCommandService:
             observed_at=observed_at,
             imported_by_actor=actor,
             metrics=metrics,
+        )
+
+    def interpret_analytics_snapshot(
+        self,
+        *,
+        mission_id: UUID,
+        analytics_snapshot_id: UUID,
+        actor: str,
+    ) -> AnalyticsInterpretation:
+        """Request authoritative deterministic interpretation."""
+
+        if not actor or not actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+        return self._runtime_manager.mission_control.interpret_analytics_snapshot(
+            mission_id=mission_id,
+            analytics_snapshot_id=analytics_snapshot_id,
+            interpreted_by_actor=actor,
         )

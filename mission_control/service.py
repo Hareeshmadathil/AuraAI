@@ -8,13 +8,21 @@ from datetime import timedelta
 from uuid import UUID
 
 from core import utc_now
+from mission_control.analytics_interpretation import (
+    RULESET_VERSION,
+    SUPPORTED_RULESETS,
+    build_interpretation_payload,
+    interpretation_payload_hash,
+)
 from mission_control.models import (
+    AnalyticsInterpretation,
     AnalyticsMetrics,
     AnalyticsSnapshot,
     ApprovalRequest, ApprovalState, ArtifactApprovalState, ArtifactRecord,
     AttemptStatus, CheckpointKind, CheckpointResumability, DepartmentCommand,
     DepartmentResult, DuplicateRecordError, ExecutionAttempt,
-    FailureClassification, ItemNotFoundError, MismatchError,
+    FailureClassification, ItemNotFoundError, MalformedCommandError,
+    MismatchError,
     RepositoryConsistencyError, RepositoryIntegrityError, StaleContentError,
     ConflictingDecisionError, TaskCheckpoint,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
@@ -1051,6 +1059,133 @@ class MissionControlService:
             raise ConflictingDecisionError("Conflicting analytics evidence for the same observation time.")
 
         return snapshot
+
+    def interpret_analytics_snapshot(
+        self,
+        *,
+        mission_id: UUID,
+        analytics_snapshot_id: UUID,
+        interpreted_by_actor: str,
+        ruleset_version: str = RULESET_VERSION,
+    ) -> AnalyticsInterpretation:
+        """Generate and durably store one deterministic interpretation."""
+
+        if not interpreted_by_actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+        if ruleset_version not in SUPPORTED_RULESETS:
+            raise MalformedCommandError(
+                f"Unsupported analytics interpretation ruleset: {ruleset_version}"
+            )
+        mission = self.repository.get_mission(mission_id)
+        if mission is None:
+            raise ItemNotFoundError("Mission not found.")
+        snapshot = self.repository.find_snapshot_by_id(analytics_snapshot_id)
+        if snapshot is None:
+            raise ItemNotFoundError("Analytics snapshot not found.")
+        if snapshot.mission_id != mission_id:
+            raise MismatchError("Analytics snapshot mission ID mismatch.")
+        publication = self.repository.get_publication_record_by_id(
+            snapshot.publication_id
+        )
+        if publication is None:
+            raise ItemNotFoundError("Publication record not found.")
+        if publication.mission_id != mission_id:
+            raise MismatchError("Publication record mission ID mismatch.")
+        queue_item = self.repository.get_publishing_queue_item(
+            snapshot.queue_item_id
+        )
+        if queue_item is None:
+            raise ItemNotFoundError("Publishing queue item not found.")
+        if queue_item.mission_id != mission_id:
+            raise MismatchError("Publishing queue item mission ID mismatch.")
+        if publication.queue_item_id != snapshot.queue_item_id:
+            raise MismatchError("Snapshot publication queue identity mismatch.")
+        if queue_item.queue_item_id != publication.queue_item_id:
+            raise MismatchError("Publication queue identity mismatch.")
+        if snapshot.destination != publication.destination:
+            raise MismatchError("Snapshot publication destination mismatch.")
+        if snapshot.destination != queue_item.destination:
+            raise MismatchError("Snapshot queue destination mismatch.")
+        if publication.content_hash != queue_item.manifest_hash:
+            raise MismatchError("Publication content identity mismatch.")
+
+        payload = build_interpretation_payload(
+            snapshot,
+            ruleset_version=ruleset_version,
+        )
+        payload_hash = interpretation_payload_hash(payload)
+        existing = self.repository.find_snapshot_ruleset_interpretation(
+            analytics_snapshot_id,
+            ruleset_version,
+        )
+        if existing is not None:
+            if existing.payload_hash == payload_hash:
+                return existing
+            raise ConflictingDecisionError(
+                "Stored analytics interpretation conflicts with deterministic output."
+            )
+
+        interpreted_at = utc_now()
+        interpretation = AnalyticsInterpretation(
+            mission_id=mission_id,
+            publication_id=snapshot.publication_id,
+            queue_item_id=snapshot.queue_item_id,
+            analytics_snapshot_id=analytics_snapshot_id,
+            destination=snapshot.destination,
+            interpreted_at=interpreted_at,
+            interpreted_by_actor=interpreted_by_actor.strip(),
+            ruleset_version=ruleset_version,
+            overall_classification=payload.overall_classification,
+            confidence=payload.confidence,
+            metric_interpretations=payload.metric_interpretations,
+            strengths=payload.strengths,
+            weaknesses=payload.weaknesses,
+            missing_evidence=payload.missing_evidence,
+            summary=payload.summary,
+            payload_hash=payload_hash,
+        )
+        try:
+            with self.repository.transaction():
+                self.repository.save_analytics_interpretation(interpretation)
+                self.repository.append_event(
+                    EventRecord(
+                        mission_id=mission_id,
+                        event_type="analytics.interpreted",
+                        payload={
+                            "analytics_interpretation_id": str(
+                                interpretation.analytics_interpretation_id
+                            ),
+                            "analytics_snapshot_id": str(analytics_snapshot_id),
+                            "mission_id": str(mission_id),
+                            "publication_id": str(snapshot.publication_id),
+                            "queue_item_id": str(snapshot.queue_item_id),
+                            "destination": snapshot.destination,
+                            "ruleset_version": ruleset_version,
+                            "overall_classification": (
+                                interpretation.overall_classification.value
+                            ),
+                            "confidence": interpretation.confidence.value,
+                            "interpreted_at": interpreted_at.isoformat(),
+                            "actor": interpretation.interpreted_by_actor,
+                            "payload_hash": payload_hash,
+                        },
+                    )
+                )
+        except DuplicateRecordError:
+            winner = self.repository.find_snapshot_ruleset_interpretation(
+                analytics_snapshot_id,
+                ruleset_version,
+            )
+            if winner is None:
+                raise RepositoryConsistencyError(
+                    "Expected duplicate interpretation but no winner exists."
+                )
+            if winner.payload_hash == payload_hash:
+                return winner
+            raise ConflictingDecisionError(
+                "Concurrent analytics interpretation conflicts with deterministic output."
+            )
+        return interpretation
 
 class DepartmentBus:
     """Synchronous injected bus; it never starts background or external work."""

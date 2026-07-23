@@ -102,6 +102,7 @@
         <li>
             <time datetime="{{ snapshot.observed_at.isoformat() }}">{{ snapshot.observed_at.isoformat() }}</time>
             — hash <code>{{ snapshot.payload_hash }}</code>
+            — <a href="/missions/{{ mission.mission_id }}/analytics/{{ snapshot.analytics_snapshot_id }}/interpretation">View interpretation</a>
         </li>
         {% endfor %}
     </ul>

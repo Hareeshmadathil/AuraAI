@@ -506,6 +506,92 @@ class AnalyticsSnapshot(AuraBaseModel):
         return require_utc_datetime(value, field_name=info.field_name)
 
 
+class InterpretationClassification(StrEnum):
+    """Conservative deterministic analytics classifications."""
+
+    OUTSTANDING = "outstanding"
+    STRONG = "strong"
+    AVERAGE = "average"
+    WEAK = "weak"
+    INSUFFICIENT_DATA = "insufficient_data"
+
+
+class InterpretationConfidence(StrEnum):
+    """Evidence-completeness confidence, never an AI probability."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class MetricEvidenceState(StrEnum):
+    """Explicit availability state for source and derived evidence."""
+
+    AVAILABLE = "available"
+    ZERO = "zero"
+    MISSING = "missing"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class MetricInterpretation(AuraBaseModel):
+    """One traceable deterministic source or derived metric result."""
+
+    model_config = ConfigDict(frozen=True)
+
+    metric_name: str = Field(min_length=1, max_length=100)
+    evidence_state: MetricEvidenceState
+    observed_value: Decimal | None = None
+    normalized_value: str | None = Field(default=None, max_length=100)
+    derived: bool = False
+    source_metrics: tuple[str, ...] = ()
+    rule_id: str = Field(min_length=1, max_length=150)
+    classification: InterpretationClassification
+    confidence: InterpretationConfidence
+    explanation: str = Field(min_length=1, max_length=1000)
+
+
+class InterpretationFinding(AuraBaseModel):
+    """A deterministic finding traceable to evidence and one rule."""
+
+    model_config = ConfigDict(frozen=True)
+
+    metric_names: tuple[str, ...]
+    rule_id: str = Field(min_length=1, max_length=150)
+    evidence_state: MetricEvidenceState
+    explanation: str = Field(min_length=1, max_length=1000)
+
+
+class AnalyticsInterpretation(AuraBaseModel):
+    """Durable deterministic interpretation of one analytics snapshot."""
+
+    model_config = ConfigDict(frozen=True)
+
+    analytics_interpretation_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    publication_id: UUID
+    queue_item_id: UUID
+    analytics_snapshot_id: UUID
+    destination: str = Field(min_length=1, max_length=150)
+    interpreted_at: datetime
+    interpreted_by_actor: str = Field(min_length=1, max_length=150)
+    ruleset_version: str = Field(min_length=1, max_length=100)
+    overall_classification: InterpretationClassification
+    confidence: InterpretationConfidence
+    metric_interpretations: tuple[MetricInterpretation, ...]
+    strengths: tuple[InterpretationFinding, ...] = ()
+    weaknesses: tuple[InterpretationFinding, ...] = ()
+    missing_evidence: tuple[InterpretationFinding, ...] = ()
+    summary: str = Field(min_length=1, max_length=3000)
+    payload_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @field_validator("interpreted_at")
+    @classmethod
+    def validate_interpreted_at(cls, value: datetime) -> datetime:
+        """Require canonical UTC for the durable interpretation timestamp."""
+
+        return require_utc_datetime(value, field_name="interpreted_at")
+
+
 
 class MissionControlProjection(AuraBaseModel):
     missions: list[MissionRecord]

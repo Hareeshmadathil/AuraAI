@@ -9,12 +9,15 @@ from pydantic import Field
 
 from core import AuraBaseModel, utc_now
 from mission_control.models import (
+    AnalyticsInterpretation,
     AnalyticsSnapshot,
     ApprovalRequest,
     ApprovalState,
     EventRecord,
+    InterpretationFinding,
     MissionControlStatus,
 )
+from mission_control.analytics_interpretation import RULESET_VERSION
 from mission_control.service import MissionControlService
 from web_intelligence.evidence_providers import create_default_evidence_registry
 
@@ -81,6 +84,27 @@ class CapabilityView(AuraBaseModel):
 
 
 
+class DashboardAnalyticsInterpretation(AuraBaseModel):
+    """Typed durable interpretation history for one publication."""
+
+    latest_interpretation: AnalyticsInterpretation | None = None
+    interpretation_history: list[AnalyticsInterpretation] = Field(
+        default_factory=list
+    )
+    interpretation_count: int = 0
+    ruleset_version: str = RULESET_VERSION
+    overall_classification: str | None = None
+    confidence: str | None = None
+    strengths: list[InterpretationFinding] = Field(default_factory=list)
+    weaknesses: list[InterpretationFinding] = Field(default_factory=list)
+    missing_evidence: list[InterpretationFinding] = Field(default_factory=list)
+    interpreted_at: str | None = None
+    source_analytics_snapshot_id: UUID | None = None
+    interpretation_available: bool = False
+    interpretation_actionable: bool = False
+    interpretation_blocking_reason: str | None = None
+
+
 class DashboardPublicationAnalytics(AuraBaseModel):
     latest_snapshot: AnalyticsSnapshot | None = None
     historical_snapshots: list[AnalyticsSnapshot] = Field(default_factory=list)
@@ -90,6 +114,9 @@ class DashboardPublicationAnalytics(AuraBaseModel):
     has_analytics: bool = False
     analytics_actionable: bool = False
     analytics_blocking_reason: str | None = None
+    interpretation: DashboardAnalyticsInterpretation = Field(
+        default_factory=DashboardAnalyticsInterpretation
+    )
 
 
 class DashboardPublishingQueueItem(AuraBaseModel):
@@ -212,6 +239,19 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
         if pub_record:
             snapshots = control.repository.list_analytics_snapshots(pub_record.publication_id)
             latest = snapshots[0] if snapshots else None
+            interpretations = control.repository.list_analytics_interpretations(
+                pub_record.publication_id
+            )
+            latest_interpretation = (
+                interpretations[0] if interpretations else None
+            )
+            current_exists = bool(
+                latest
+                and control.repository.find_snapshot_ruleset_interpretation(
+                    latest.analytics_snapshot_id,
+                    RULESET_VERSION,
+                )
+            )
 
             a_blocking = None
             a_actionable = False
@@ -228,7 +268,58 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
                 latest_imported_at=latest.imported_at.isoformat() if latest else None,
                 has_analytics=bool(snapshots),
                 analytics_actionable=a_actionable,
-                analytics_blocking_reason=a_blocking
+                analytics_blocking_reason=a_blocking,
+                interpretation=DashboardAnalyticsInterpretation(
+                    latest_interpretation=latest_interpretation,
+                    interpretation_history=interpretations[1:],
+                    interpretation_count=len(interpretations),
+                    overall_classification=(
+                        latest_interpretation.overall_classification.value
+                        if latest_interpretation
+                        else None
+                    ),
+                    confidence=(
+                        latest_interpretation.confidence.value
+                        if latest_interpretation
+                        else None
+                    ),
+                    strengths=(
+                        list(latest_interpretation.strengths)
+                        if latest_interpretation
+                        else []
+                    ),
+                    weaknesses=(
+                        list(latest_interpretation.weaknesses)
+                        if latest_interpretation
+                        else []
+                    ),
+                    missing_evidence=(
+                        list(latest_interpretation.missing_evidence)
+                        if latest_interpretation
+                        else []
+                    ),
+                    interpreted_at=(
+                        latest_interpretation.interpreted_at.isoformat()
+                        if latest_interpretation
+                        else None
+                    ),
+                    source_analytics_snapshot_id=(
+                        latest_interpretation.analytics_snapshot_id
+                        if latest_interpretation
+                        else latest.analytics_snapshot_id if latest else None
+                    ),
+                    interpretation_available=bool(interpretations),
+                    interpretation_actionable=bool(latest and not current_exists),
+                    interpretation_blocking_reason=(
+                        None
+                        if latest and not current_exists
+                        else (
+                            "Current ruleset interpretation already exists."
+                            if latest
+                            else "No analytics snapshot is available."
+                        )
+                    ),
+                ),
             )
 
         publishing_queue.append(DashboardPublishingQueueItem(

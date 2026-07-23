@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from mission_control.models import (
     DuplicateRecordError,
     RepositoryIntegrityError,
+    AnalyticsInterpretation,
     AnalyticsSnapshot,
     ApprovalRequest,
     ArtifactRecord,
@@ -116,6 +117,27 @@ class MissionControlRepository(ABC):
         publication_id: UUID,
     ) -> list[AnalyticsSnapshot]: ...
     @abstractmethod
+    def save_analytics_interpretation(
+        self,
+        interpretation: AnalyticsInterpretation,
+    ) -> None: ...
+    @abstractmethod
+    def find_interpretation_by_id(
+        self,
+        interpretation_id: UUID,
+    ) -> AnalyticsInterpretation | None: ...
+    @abstractmethod
+    def find_snapshot_ruleset_interpretation(
+        self,
+        analytics_snapshot_id: UUID,
+        ruleset_version: str,
+    ) -> AnalyticsInterpretation | None: ...
+    @abstractmethod
+    def list_analytics_interpretations(
+        self,
+        publication_id: UUID,
+    ) -> list[AnalyticsInterpretation]: ...
+    @abstractmethod
     @contextmanager
     def transaction(self) -> Iterator[None]: ...
 
@@ -133,6 +155,7 @@ class InMemoryMissionControlRepository(MissionControlRepository):
         self.publishing_queue: dict[UUID, PublishingQueueItem] = {}
         self.publication_records: dict[UUID, PublicationRecord] = {}
         self.analytics_snapshots: dict[UUID, AnalyticsSnapshot] = {}
+        self.analytics_interpretations: dict[UUID, AnalyticsInterpretation] = {}
         self._lock = threading.RLock()
 
     @contextmanager
@@ -253,10 +276,72 @@ class InMemoryMissionControlRepository(MissionControlRepository):
             reverse=True,
         )
 
+    def save_analytics_interpretation(
+        self,
+        interpretation: AnalyticsInterpretation,
+    ) -> None:
+        with self._lock:
+            if self.find_snapshot_ruleset_interpretation(
+                interpretation.analytics_snapshot_id,
+                interpretation.ruleset_version,
+            ) is not None:
+                raise DuplicateRecordError(
+                    "Analytics interpretation already exists for this "
+                    "snapshot and ruleset."
+                )
+            self._insert(
+                self.analytics_interpretations,
+                interpretation.analytics_interpretation_id,
+                interpretation,
+            )
+
+    def find_interpretation_by_id(
+        self,
+        interpretation_id: UUID,
+    ) -> AnalyticsInterpretation | None:
+        with self._lock:
+            value = self.analytics_interpretations.get(interpretation_id)
+            return value.model_copy(deep=True) if value else None
+
+    def find_snapshot_ruleset_interpretation(
+        self,
+        analytics_snapshot_id: UUID,
+        ruleset_version: str,
+    ) -> AnalyticsInterpretation | None:
+        with self._lock:
+            return next(
+                (
+                    value.model_copy(deep=True)
+                    for value in self.analytics_interpretations.values()
+                    if value.analytics_snapshot_id == analytics_snapshot_id
+                    and value.ruleset_version == ruleset_version
+                ),
+                None,
+            )
+
+    def list_analytics_interpretations(
+        self,
+        publication_id: UUID,
+    ) -> list[AnalyticsInterpretation]:
+        with self._lock:
+            values = [
+                value.model_copy(deep=True)
+                for value in self.analytics_interpretations.values()
+                if value.publication_id == publication_id
+            ]
+        return sorted(
+            values,
+            key=lambda value: (
+                value.interpreted_at,
+                value.analytics_interpretation_id.int,
+            ),
+            reverse=True,
+        )
+
 
 class SQLiteMissionControlRepository(MissionControlRepository):
     """SQLite JSON-record repository with foreign keys and atomic writes."""
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, database_path: Path, *, allowed_root: Path) -> None:
         root = allowed_root.resolve()
@@ -297,10 +382,26 @@ class SQLiteMissionControlRepository(MissionControlRepository):
                 UNIQUE(publication_id, observed_at)
             );
             CREATE INDEX IF NOT EXISTS idx_analytics_publication_observed ON analytics_snapshots(publication_id, observed_at DESC);
+            CREATE TABLE IF NOT EXISTS analytics_interpretations(
+                id TEXT PRIMARY KEY,
+                mission_id TEXT NOT NULL REFERENCES missions(id),
+                publication_id TEXT NOT NULL REFERENCES publication_records(id),
+                queue_item_id TEXT NOT NULL REFERENCES publishing_queue(id),
+                analytics_snapshot_id TEXT NOT NULL REFERENCES analytics_snapshots(id),
+                destination TEXT NOT NULL,
+                ruleset_version TEXT NOT NULL,
+                interpreted_at TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                data TEXT NOT NULL,
+                UNIQUE(analytics_snapshot_id, ruleset_version)
+            );
+            CREATE INDEX IF NOT EXISTS idx_interpretations_publication_time
+            ON analytics_interpretations(publication_id, interpreted_at DESC);
             """)
             row=self.connection.execute("SELECT version FROM schema_version").fetchone()
             if row is None: self.connection.execute("INSERT INTO schema_version(version) VALUES (?)",(self.SCHEMA_VERSION,))
-            elif row[0] == 1: self.connection.execute("UPDATE schema_version SET version = ?", (self.SCHEMA_VERSION,))
+            elif row[0] in {1, 2}: self.connection.execute("UPDATE schema_version SET version = ?", (self.SCHEMA_VERSION,))
             elif row[0] != self.SCHEMA_VERSION: raise RuntimeError("Unsupported Mission Control schema version.")
 
     @contextmanager
@@ -511,3 +612,93 @@ class SQLiteMissionControlRepository(MissionControlRepository):
                 (str(publication_id), observed_at.isoformat()),
             ).fetchone()
             return AnalyticsSnapshot.model_validate_json(row[0]) if row else None
+
+    def save_analytics_interpretation(
+        self,
+        interpretation: AnalyticsInterpretation,
+    ) -> None:
+        with self._lock:
+            try:
+                self.connection.execute(
+                    "INSERT INTO analytics_interpretations("
+                    "id, mission_id, publication_id, queue_item_id, "
+                    "analytics_snapshot_id, destination, ruleset_version, "
+                    "interpreted_at, actor, payload_hash, data"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(interpretation.analytics_interpretation_id),
+                        str(interpretation.mission_id),
+                        str(interpretation.publication_id),
+                        str(interpretation.queue_item_id),
+                        str(interpretation.analytics_snapshot_id),
+                        interpretation.destination,
+                        interpretation.ruleset_version,
+                        interpretation.interpreted_at.isoformat(),
+                        interpretation.interpreted_by_actor,
+                        interpretation.payload_hash,
+                        interpretation.model_dump_json(),
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                message = str(error).lower()
+                expected = (
+                    "unique constraint failed: "
+                    "analytics_interpretations.analytics_snapshot_id, "
+                    "analytics_interpretations.ruleset_version"
+                )
+                if expected in message:
+                    raise DuplicateRecordError(
+                        "Analytics interpretation already exists for this "
+                        "snapshot and ruleset."
+                    ) from error
+                raise RepositoryIntegrityError(
+                    f"Database integrity error: {error}"
+                ) from error
+
+    def find_interpretation_by_id(
+        self,
+        interpretation_id: UUID,
+    ) -> AnalyticsInterpretation | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM analytics_interpretations WHERE id = ?",
+                (str(interpretation_id),),
+            ).fetchone()
+            return (
+                AnalyticsInterpretation.model_validate_json(row[0])
+                if row
+                else None
+            )
+
+    def find_snapshot_ruleset_interpretation(
+        self,
+        analytics_snapshot_id: UUID,
+        ruleset_version: str,
+    ) -> AnalyticsInterpretation | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM analytics_interpretations "
+                "WHERE analytics_snapshot_id = ? AND ruleset_version = ?",
+                (str(analytics_snapshot_id), ruleset_version),
+            ).fetchone()
+            return (
+                AnalyticsInterpretation.model_validate_json(row[0])
+                if row
+                else None
+            )
+
+    def list_analytics_interpretations(
+        self,
+        publication_id: UUID,
+    ) -> list[AnalyticsInterpretation]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT data FROM analytics_interpretations "
+                "WHERE publication_id = ? "
+                "ORDER BY interpreted_at DESC, id DESC",
+                (str(publication_id),),
+            ).fetchall()
+            return [
+                AnalyticsInterpretation.model_validate_json(row[0])
+                for row in rows
+            ]

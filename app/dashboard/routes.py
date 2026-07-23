@@ -75,6 +75,14 @@ class AnalyticsImportForm(BaseModel):
     revenue_currency: str | None = None
     import_note: str | None = Field(default=None, max_length=2000)
 
+
+class AnalyticsInterpretationForm(BaseModel):
+    """CSRF-only request for authoritative deterministic interpretation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    csrf_token: str = Field(min_length=32, max_length=200)
+
 class FounderDecisionForm(BaseModel):
     """Strict hash-bound local founder mutation payload."""
 
@@ -970,6 +978,151 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
                 "publication": publication,
                 "queue_item": queue_view,
                 "analytics": queue_view.analytics,
+                "csrf_token": csrf_token,
+            },
+        )
+        response.set_cookie(
+            "auraai_csrf",
+            csrf_token,
+            httponly=True,
+            samesite="strict",
+            secure=False,
+            max_age=1800,
+        )
+        return response
+
+    @router.post(
+        "/missions/{mission_id}/analytics/{analytics_snapshot_id}/interpret",
+        response_class=RedirectResponse,
+    )
+    async def interpret_analytics_snapshot(
+        mission_id: UUID,
+        analytics_snapshot_id: UUID,
+        request: Request,
+    ) -> RedirectResponse:
+        """Create one deterministic interpretation through Mission Control."""
+
+        from mission_control.models import (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        )
+
+        require_local(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(status_code=415, detail="Unsupported form content type.")
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Form is too large.")
+        try:
+            values = parse_qs(
+                body.decode("utf-8"),
+                keep_blank_values=True,
+                strict_parsing=True,
+            )
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form = AnalyticsInterpretationForm.model_validate(
+                {key: value[0] for key, value in values.items()}
+            )
+        except (UnicodeDecodeError, ValueError, ValidationError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid analytics interpretation form.",
+            ) from error
+        cookie_token = request.cookies.get("auraai_csrf", "")
+        if not cookie_token or not secrets.compare_digest(
+            cookie_token,
+            form.csrf_token,
+        ):
+            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+        try:
+            mission_commands(request).interpret_analytics_snapshot(
+                mission_id=mission_id,
+                analytics_snapshot_id=analytics_snapshot_id,
+                actor="Local Founder",
+            )
+        except ItemNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except (ConflictingDecisionError, StaleContentError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except (MismatchError, MalformedCommandError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except (RepositoryIntegrityError, RepositoryConsistencyError) as error:
+            raise HTTPException(
+                status_code=503,
+                detail="Analytics interpretation persistence is unavailable.",
+            ) from error
+        return RedirectResponse(
+            url=request.url_for(
+                "analytics_interpretation_page",
+                mission_id=mission_id,
+                analytics_snapshot_id=analytics_snapshot_id,
+            ),
+            status_code=303,
+        )
+
+    @router.get(
+        "/missions/{mission_id}/analytics/{analytics_snapshot_id}/interpretation",
+        response_class=HTMLResponse,
+    )
+    def analytics_interpretation_page(
+        mission_id: UUID,
+        analytics_snapshot_id: UUID,
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render durable evidence and deterministic interpretations."""
+
+        require_local(request)
+        control = mission_control(request)
+        mission = control.repository.get_mission(mission_id)
+        if mission is None:
+            raise HTTPException(status_code=404, detail="Mission was not found.")
+        snapshot = control.repository.find_snapshot_by_id(analytics_snapshot_id)
+        if snapshot is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Analytics snapshot was not found.",
+            )
+        if snapshot.mission_id != mission_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Analytics snapshot mission ID mismatch.",
+            )
+        publication = control.repository.get_publication_record_by_id(
+            snapshot.publication_id
+        )
+        if publication is None:
+            raise HTTPException(status_code=404, detail="Publication was not found.")
+        interpretations = [
+            item
+            for item in control.repository.list_analytics_interpretations(
+                snapshot.publication_id
+            )
+            if item.analytics_snapshot_id == analytics_snapshot_id
+        ]
+        csrf_token = secrets.token_urlsafe(32)
+        response = render(
+            request=request,
+            service=service,
+            template_name="analytics_interpretation.html",
+            page_title="Analytics Interpretation",
+            active_path="/analytics",
+            extra_context={
+                "mission": mission,
+                "publication": publication,
+                "source_snapshot": snapshot,
+                "latest_interpretation": (
+                    interpretations[0] if interpretations else None
+                ),
+                "interpretation_history": interpretations[1:],
+                "interpretation_count": len(interpretations),
                 "csrf_token": csrf_token,
             },
         )
