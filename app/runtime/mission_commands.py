@@ -13,6 +13,8 @@ from mission_control.models import (
     ApprovalState,
     MalformedCommandError,
     MissionLesson,
+    MissionRecommendation,
+    RecommendationDecision,
     MissionRecord,
     PublishingQueueItem,
     TaskRecord,
@@ -222,4 +224,41 @@ class MissionCommandService:
             mission_id=mission_id,
             analytics_interpretation_id=analytics_interpretation_id,
             created_by_actor=actor,
+        )
+
+    def create_mission_recommendation(
+        self,
+        *,
+        mission_id: UUID,
+        mission_lesson_id: UUID,
+        actor: str,
+    ) -> MissionRecommendation:
+        if not actor or not actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+        return (
+            self._runtime_manager.mission_control
+            .create_mission_recommendation(
+                mission_id=mission_id,
+                mission_lesson_id=mission_lesson_id,
+                created_by_actor=actor,
+            )
+        )
+
+    def review_mission_recommendation(
+        self,
+        *,
+        mission_id: UUID,
+        mission_recommendation_id: UUID,
+        decision: RecommendationDecision,
+        actor: str,
+        founder_note: str | None = None,
+    ) -> MissionRecommendation:
+        if not actor or not actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+        return self._runtime_manager.mission_control.review_mission_recommendation(
+            mission_id=mission_id,
+            mission_recommendation_id=mission_recommendation_id,
+            decision=decision,
+            decided_by_actor=actor,
+            founder_note=founder_note,
         )

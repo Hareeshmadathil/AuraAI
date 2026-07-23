@@ -24,6 +24,10 @@
         <p>{{ latest_lesson.summary }}</p>
         <p><strong>Payload hash:</strong>
            <code>{{ latest_lesson.payload_hash }}</code></p>
+        <a class="button"
+           href="/missions/{{ mission.mission_id }}/lessons/{{ latest_lesson.mission_lesson_id }}/recommendation">
+            Review recommendation
+        </a>
     </article>
     <article class="panel">
         <p class="eyebrow">Strengths</p>

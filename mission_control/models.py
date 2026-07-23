@@ -678,6 +678,111 @@ class MissionLesson(AuraBaseModel):
         return require_utc_datetime(value, field_name="created_at")
 
 
+class RecommendationCategory(StrEnum):
+    PRESERVE_STRENGTH = "preserve_strength"
+    ADDRESS_WEAKNESS = "address_weakness"
+    COLLECT_MORE_EVIDENCE = "collect_more_evidence"
+    AVOID_UNSUPPORTED_CONCLUSION = "avoid_unsupported_conclusion"
+    NO_ACTIONABLE_RECOMMENDATION = "no_actionable_recommendation"
+
+
+class RecommendationConfidence(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class RecommendationStatus(StrEnum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
+class RecommendationDecision(StrEnum):
+    ACCEPT = "accept"
+    REJECT = "reject"
+
+
+class RecommendationEvidenceReference(AuraBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    mission_lesson_id: UUID
+    lesson_finding_index: int = Field(ge=0)
+    analytics_interpretation_id: UUID
+    analytics_snapshot_id: UUID
+    source_lesson_category: LessonCategory
+    source_classification: InterpretationClassification
+    source_evidence_state: LessonEvidenceState
+    lesson_rule_ids: tuple[str, ...]
+    recommendation_rule_id: str = Field(min_length=1, max_length=150)
+
+
+class RecommendationProposal(AuraBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    category: RecommendationCategory
+    statement: str = Field(min_length=1, max_length=1000)
+    rationale: str = Field(min_length=1, max_length=1500)
+    confidence: RecommendationConfidence
+    source_lesson_finding_indexes: tuple[int, ...]
+    source_lesson_categories: tuple[LessonCategory, ...]
+    source_rule_ids: tuple[str, ...]
+    limitations: tuple[str, ...]
+    evidence_references: tuple[RecommendationEvidenceReference, ...]
+
+
+class MissionRecommendation(AuraBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    mission_recommendation_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    publication_id: UUID
+    queue_item_id: UUID
+    analytics_snapshot_id: UUID
+    analytics_interpretation_id: UUID
+    mission_lesson_id: UUID
+    destination: str = Field(min_length=1, max_length=150)
+    recommendation_ruleset_version: str = Field(min_length=1, max_length=100)
+    created_at: datetime
+    created_by_actor: str = Field(min_length=1, max_length=150)
+    payload_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confidence: RecommendationConfidence
+    status: RecommendationStatus = RecommendationStatus.PENDING
+    summary: str = Field(min_length=1, max_length=3000)
+    proposals: tuple[RecommendationProposal, ...]
+    rationale: str = Field(min_length=1, max_length=3000)
+    evidence_references: tuple[RecommendationEvidenceReference, ...]
+    decided_at: datetime | None = None
+    decided_by: str | None = Field(default=None, max_length=150)
+    founder_note: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("created_at", "decided_at")
+    @classmethod
+    def validate_recommendation_times(
+        cls, value: datetime | None
+    ) -> datetime | None:
+        if value is None:
+            return None
+        return require_utc_datetime(value, field_name="recommendation timestamp")
+
+    @model_validator(mode="after")
+    def validate_review_state(self) -> "MissionRecommendation":
+        review_values = (
+            self.decided_at,
+            self.decided_by,
+            self.founder_note,
+        )
+        if self.status == RecommendationStatus.PENDING:
+            if any(value is not None for value in review_values):
+                raise ValueError(
+                    "Pending recommendations cannot contain review metadata."
+                )
+        elif self.decided_at is None or not self.decided_by:
+            raise ValueError(
+                "Final recommendations require decision time and actor."
+            )
+        return self
+
 
 class MissionControlProjection(AuraBaseModel):
     missions: list[MissionRecord]

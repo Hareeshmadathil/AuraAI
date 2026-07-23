@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block heading %}Mission Recommendation{% endblock %}
+{% block content %}
+<section class="panel page-panel">
+  <p class="eyebrow">{{ mission.title }} · advisory only</p>
+  <h2>Founder-reviewed mission recommendation</h2>
+  <p>This page proposes future direction from one persisted mission lesson.
+     Acceptance records founder review only. It does not create or progress
+     a mission, execute work, publish, render, or call a provider.</p>
+  <p><strong>Source lesson:</strong>
+     <code>{{ source_lesson.mission_lesson_id }}</code></p>
+</section>
+
+{% if latest_recommendation %}
+<section class="dashboard-grid">
+  <article class="panel">
+    <p class="eyebrow">Recommendation status</p>
+    <h3>{{ latest_recommendation.status.value | status_label }}</h3>
+    <p><strong>Confidence:</strong>
+       {{ latest_recommendation.confidence.value | status_label }}</p>
+    <p><strong>Ruleset:</strong>
+       <code>{{ latest_recommendation.recommendation_ruleset_version }}</code></p>
+    <p>{{ latest_recommendation.summary }}</p>
+    <p>{{ latest_recommendation.rationale }}</p>
+  </article>
+  <article class="panel">
+    <p class="eyebrow">Advisory proposals</p>
+    <ul>{% for proposal in latest_recommendation.proposals %}
+      <li><strong>{{ proposal.category.value | status_label }}:</strong>
+          {{ proposal.statement }} {{ proposal.rationale }}</li>
+    {% endfor %}</ul>
+  </article>
+</section>
+<section class="panel page-panel">
+  <p class="eyebrow">Evidence references</p>
+  {% if latest_recommendation.evidence_references %}
+  <ul>{% for reference in latest_recommendation.evidence_references %}
+    <li>Finding {{ reference.lesson_finding_index }} ·
+        {{ reference.source_lesson_category.value | status_label }} ·
+        {{ reference.source_evidence_state.value | status_label }} ·
+        <code>{{ reference.recommendation_rule_id }}</code></li>
+  {% endfor %}</ul>
+  {% else %}<p>No evidence reference supports an actionable proposal.</p>{% endif %}
+</section>
+{% if latest_recommendation.status.value == "pending" %}
+<section class="dashboard-grid">
+  {% for action in ["accept", "reject"] %}
+  <article class="panel">
+    <form method="post"
+          action="/missions/{{ mission.mission_id }}/recommendations/{{ latest_recommendation.mission_recommendation_id }}/{{ action }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Founder reason (optional)
+        <textarea name="founder_note" maxlength="2000"></textarea>
+      </label>
+      <button type="submit" class="button">{{ action | status_label }}</button>
+    </form>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="panel page-panel">
+  <p>Final review recorded by {{ latest_recommendation.decided_by }} at
+     {{ latest_recommendation.decided_at.isoformat() }}.</p>
+  {% if latest_recommendation.founder_note %}
+  <p><strong>Founder reason:</strong> {{ latest_recommendation.founder_note }}</p>
+  {% endif %}
+</section>
+{% endif %}
+{% else %}
+<section class="panel page-panel">
+  <p>No recommendation exists for this lesson and current ruleset.</p>
+  <form method="post"
+        action="/missions/{{ mission.mission_id }}/lessons/{{ source_lesson.mission_lesson_id }}/recommendation">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="button">Create advisory recommendation</button>
+  </form>
+</section>
+{% endif %}
+
+{% if recommendation_history %}
+<section class="panel page-panel">
+  <p class="eyebrow">Recommendation history</p>
+  <ul>{% for recommendation in recommendation_history %}
+    <li>{{ recommendation.created_at.isoformat() }} ·
+        {{ recommendation.recommendation_ruleset_version }} ·
+        {{ recommendation.status.value | status_label }}</li>
+  {% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

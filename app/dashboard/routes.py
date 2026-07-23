@@ -92,6 +92,19 @@ class MissionLessonForm(BaseModel):
     csrf_token: str = Field(min_length=32, max_length=200)
 
 
+class MissionRecommendationForm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    csrf_token: str = Field(min_length=32, max_length=200)
+
+
+class MissionRecommendationDecisionForm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    csrf_token: str = Field(min_length=32, max_length=200)
+    founder_note: str | None = Field(default=None, max_length=2000)
+
+
 class FounderDecisionForm(BaseModel):
     """Strict hash-bound local founder mutation payload."""
 
@@ -166,6 +179,34 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
         host = request.client.host if request.client else ""
         if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
             raise HTTPException(status_code=403, detail="Founder review is local-only.")
+
+    def _raise_recommendation_http_error(error: Exception) -> None:
+        from mission_control.models import (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        )
+
+        if isinstance(error, ItemNotFoundError):
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        if isinstance(error, (MismatchError, MalformedCommandError)):
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        if isinstance(
+            error, (ConflictingDecisionError, StaleContentError)
+        ):
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        if isinstance(
+            error, (RepositoryIntegrityError, RepositoryConsistencyError)
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="Mission recommendation persistence is unavailable.",
+            ) from error
+        raise error
 
     def parse_utc_timestamp(value: str) -> datetime:
         """Parse an explicitly timezone-qualified UTC ISO-8601 timestamp."""
@@ -1309,6 +1350,213 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             max_age=1800,
         )
         return response
+
+    @router.post(
+        "/missions/{mission_id}/lessons/{mission_lesson_id}/recommendation",
+        response_class=RedirectResponse,
+    )
+    async def create_mission_recommendation(
+        mission_id: UUID,
+        mission_lesson_id: UUID,
+        request: Request,
+    ) -> RedirectResponse:
+        """Create an advisory recommendation through Mission Control."""
+
+        from mission_control.models import (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        )
+
+        require_local(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(status_code=415, detail="Unsupported form content type.")
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Form is too large.")
+        try:
+            values = parse_qs(
+                body.decode("utf-8"), keep_blank_values=True,
+                strict_parsing=True,
+            )
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form = MissionRecommendationForm.model_validate(
+                {key: value[0] for key, value in values.items()}
+            )
+        except (UnicodeDecodeError, ValueError, ValidationError) as error:
+            raise HTTPException(
+                status_code=422, detail="Invalid recommendation form."
+            ) from error
+        if not secrets.compare_digest(
+            request.cookies.get("auraai_csrf", ""), form.csrf_token
+        ):
+            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+        try:
+            mission_commands(request).create_mission_recommendation(
+                mission_id=mission_id,
+                mission_lesson_id=mission_lesson_id,
+                actor="Local Founder",
+            )
+        except (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        ) as error:
+            _raise_recommendation_http_error(error)
+        return RedirectResponse(
+            url=request.url_for(
+                "mission_recommendation_page",
+                mission_id=mission_id,
+                mission_lesson_id=mission_lesson_id,
+            ),
+            status_code=303,
+        )
+
+    @router.get(
+        "/missions/{mission_id}/lessons/{mission_lesson_id}/recommendation",
+        response_class=HTMLResponse,
+    )
+    def mission_recommendation_page(
+        mission_id: UUID,
+        mission_lesson_id: UUID,
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        require_local(request)
+        control = mission_control(request)
+        mission = control.repository.get_mission(mission_id)
+        if mission is None:
+            raise HTTPException(status_code=404, detail="Mission was not found.")
+        lesson = control.repository.find_mission_lesson_by_id(
+            mission_lesson_id
+        )
+        if lesson is None:
+            raise HTTPException(
+                status_code=404, detail="Mission lesson was not found."
+            )
+        if lesson.mission_id != mission_id:
+            raise HTTPException(
+                status_code=422, detail="Mission lesson mission ID mismatch."
+            )
+        recommendations = [
+            item
+            for item in control.repository.list_mission_recommendations(
+                lesson.publication_id
+            )
+            if item.mission_lesson_id == mission_lesson_id
+        ]
+        csrf_token = secrets.token_urlsafe(32)
+        response = render(
+            request=request,
+            service=service,
+            template_name="mission_recommendation.html",
+            page_title="Mission Recommendation",
+            active_path="/analytics",
+            extra_context={
+                "mission": mission,
+                "source_lesson": lesson,
+                "latest_recommendation": (
+                    recommendations[0] if recommendations else None
+                ),
+                "recommendation_history": recommendations[1:],
+                "csrf_token": csrf_token,
+            },
+        )
+        response.set_cookie(
+            "auraai_csrf", csrf_token, httponly=True, samesite="strict",
+            secure=False, max_age=1800,
+        )
+        return response
+
+    @router.post(
+        "/missions/{mission_id}/recommendations/"
+        "{mission_recommendation_id}/{decision}",
+        response_class=RedirectResponse,
+    )
+    async def review_mission_recommendation(
+        mission_id: UUID,
+        mission_recommendation_id: UUID,
+        decision: str,
+        request: Request,
+    ) -> RedirectResponse:
+        from mission_control.models import (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RecommendationDecision,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        )
+
+        require_local(request)
+        try:
+            typed_decision = RecommendationDecision(decision)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=404, detail="Review action was not found."
+            ) from error
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(status_code=415, detail="Unsupported form content type.")
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Form is too large.")
+        try:
+            values = parse_qs(
+                body.decode("utf-8"), keep_blank_values=True,
+                strict_parsing=True,
+            )
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form = MissionRecommendationDecisionForm.model_validate(
+                {key: value[0] for key, value in values.items()}
+            )
+        except (UnicodeDecodeError, ValueError, ValidationError) as error:
+            raise HTTPException(
+                status_code=422, detail="Invalid recommendation review form."
+            ) from error
+        if not secrets.compare_digest(
+            request.cookies.get("auraai_csrf", ""), form.csrf_token
+        ):
+            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+        try:
+            updated = mission_commands(request).review_mission_recommendation(
+                mission_id=mission_id,
+                mission_recommendation_id=mission_recommendation_id,
+                decision=typed_decision,
+                actor="Local Founder",
+                founder_note=form.founder_note,
+            )
+        except (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        ) as error:
+            _raise_recommendation_http_error(error)
+        return RedirectResponse(
+            url=request.url_for(
+                "mission_recommendation_page",
+                mission_id=mission_id,
+                mission_lesson_id=updated.mission_lesson_id,
+            ),
+            status_code=303,
+        )
 
     @router.post(
         "/api/missions/{mission_id}/run-next",

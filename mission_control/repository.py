@@ -24,6 +24,7 @@ from mission_control.models import (
     ExecutionAttempt,
     MissionRecord,
     MissionLesson,
+    MissionRecommendation,
     TaskCheckpoint,
     TaskRecord,
     TaskStatus,
@@ -157,6 +158,26 @@ class MissionControlRepository(ABC):
         publication_id: UUID,
     ) -> list[MissionLesson]: ...
     @abstractmethod
+    def save_mission_recommendation(
+        self, recommendation: MissionRecommendation
+    ) -> None: ...
+    @abstractmethod
+    def update_mission_recommendation(
+        self, recommendation: MissionRecommendation
+    ) -> None: ...
+    @abstractmethod
+    def find_mission_recommendation_by_id(
+        self, recommendation_id: UUID
+    ) -> MissionRecommendation | None: ...
+    @abstractmethod
+    def find_lesson_ruleset_recommendation(
+        self, mission_lesson_id: UUID, recommendation_ruleset_version: str
+    ) -> MissionRecommendation | None: ...
+    @abstractmethod
+    def list_mission_recommendations(
+        self, publication_id: UUID
+    ) -> list[MissionRecommendation]: ...
+    @abstractmethod
     @contextmanager
     def transaction(self) -> Iterator[None]: ...
 
@@ -176,6 +197,7 @@ class InMemoryMissionControlRepository(MissionControlRepository):
         self.analytics_snapshots: dict[UUID, AnalyticsSnapshot] = {}
         self.analytics_interpretations: dict[UUID, AnalyticsInterpretation] = {}
         self.mission_lessons: dict[UUID, MissionLesson] = {}
+        self.mission_recommendations: dict[UUID, MissionRecommendation] = {}
         self._lock = threading.RLock()
 
     @contextmanager
@@ -418,10 +440,80 @@ class InMemoryMissionControlRepository(MissionControlRepository):
             reverse=True,
         )
 
+    def save_mission_recommendation(
+        self, recommendation: MissionRecommendation
+    ) -> None:
+        with self._lock:
+            if self.find_lesson_ruleset_recommendation(
+                recommendation.mission_lesson_id,
+                recommendation.recommendation_ruleset_version,
+            ):
+                raise DuplicateRecordError(
+                    "Mission recommendation already exists for this lesson "
+                    "and ruleset."
+                )
+            self._insert(
+                self.mission_recommendations,
+                recommendation.mission_recommendation_id,
+                recommendation,
+            )
+
+    def update_mission_recommendation(
+        self, recommendation: MissionRecommendation
+    ) -> None:
+        with self._lock:
+            if recommendation.mission_recommendation_id not in (
+                self.mission_recommendations
+            ):
+                raise KeyError(recommendation.mission_recommendation_id)
+            self.mission_recommendations[
+                recommendation.mission_recommendation_id
+            ] = recommendation.model_copy(deep=True)
+
+    def find_mission_recommendation_by_id(
+        self, recommendation_id: UUID
+    ) -> MissionRecommendation | None:
+        with self._lock:
+            value = self.mission_recommendations.get(recommendation_id)
+            return value.model_copy(deep=True) if value else None
+
+    def find_lesson_ruleset_recommendation(
+        self, mission_lesson_id: UUID, recommendation_ruleset_version: str
+    ) -> MissionRecommendation | None:
+        with self._lock:
+            return next(
+                (
+                    value.model_copy(deep=True)
+                    for value in self.mission_recommendations.values()
+                    if value.mission_lesson_id == mission_lesson_id
+                    and value.recommendation_ruleset_version
+                    == recommendation_ruleset_version
+                ),
+                None,
+            )
+
+    def list_mission_recommendations(
+        self, publication_id: UUID
+    ) -> list[MissionRecommendation]:
+        with self._lock:
+            values = [
+                value.model_copy(deep=True)
+                for value in self.mission_recommendations.values()
+                if value.publication_id == publication_id
+            ]
+        return sorted(
+            values,
+            key=lambda value: (
+                value.created_at,
+                value.mission_recommendation_id.int,
+            ),
+            reverse=True,
+        )
+
 
 class SQLiteMissionControlRepository(MissionControlRepository):
     """SQLite JSON-record repository with foreign keys and atomic writes."""
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(self, database_path: Path, *, allowed_root: Path) -> None:
         root = allowed_root.resolve()
@@ -495,6 +587,24 @@ class SQLiteMissionControlRepository(MissionControlRepository):
             );
             CREATE INDEX IF NOT EXISTS idx_lessons_publication_time
             ON mission_lessons(publication_id, created_at DESC);
+            CREATE TABLE IF NOT EXISTS mission_recommendations(
+                id TEXT PRIMARY KEY,
+                mission_id TEXT NOT NULL REFERENCES missions(id),
+                publication_id TEXT NOT NULL REFERENCES publication_records(id),
+                queue_item_id TEXT NOT NULL REFERENCES publishing_queue(id),
+                analytics_snapshot_id TEXT NOT NULL REFERENCES analytics_snapshots(id),
+                analytics_interpretation_id TEXT NOT NULL REFERENCES analytics_interpretations(id),
+                mission_lesson_id TEXT NOT NULL REFERENCES mission_lessons(id),
+                destination TEXT NOT NULL,
+                recommendation_ruleset_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                data TEXT NOT NULL,
+                UNIQUE(mission_lesson_id, recommendation_ruleset_version)
+            );
+            CREATE INDEX IF NOT EXISTS idx_recommendations_publication_time
+            ON mission_recommendations(publication_id, created_at DESC);
             """)
             row = self.connection.execute(
                 "SELECT version FROM schema_version"
@@ -504,7 +614,7 @@ class SQLiteMissionControlRepository(MissionControlRepository):
                     "INSERT INTO schema_version(version) VALUES (?)",
                     (self.SCHEMA_VERSION,),
                 )
-            elif row[0] in {1, 2, 3}:
+            elif row[0] in {1, 2, 3, 4}:
                 self.connection.execute(
                     "UPDATE schema_version SET version = ?",
                     (self.SCHEMA_VERSION,),
@@ -889,3 +999,106 @@ class SQLiteMissionControlRepository(MissionControlRepository):
                 (str(publication_id),),
             ).fetchall()
             return [MissionLesson.model_validate_json(row[0]) for row in rows]
+
+    def save_mission_recommendation(
+        self, recommendation: MissionRecommendation
+    ) -> None:
+        with self._lock:
+            try:
+                self.connection.execute(
+                    "INSERT INTO mission_recommendations("
+                    "id, mission_id, publication_id, queue_item_id, "
+                    "analytics_snapshot_id, analytics_interpretation_id, "
+                    "mission_lesson_id, destination, "
+                    "recommendation_ruleset_version, created_at, status, "
+                    "payload_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(recommendation.mission_recommendation_id),
+                        str(recommendation.mission_id),
+                        str(recommendation.publication_id),
+                        str(recommendation.queue_item_id),
+                        str(recommendation.analytics_snapshot_id),
+                        str(recommendation.analytics_interpretation_id),
+                        str(recommendation.mission_lesson_id),
+                        recommendation.destination,
+                        recommendation.recommendation_ruleset_version,
+                        recommendation.created_at.isoformat(),
+                        recommendation.status.value,
+                        recommendation.payload_hash,
+                        recommendation.model_dump_json(),
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                expected = (
+                    "unique constraint failed: "
+                    "mission_recommendations.mission_lesson_id, "
+                    "mission_recommendations.recommendation_ruleset_version"
+                )
+                if expected in str(error).lower():
+                    raise DuplicateRecordError(
+                        "Mission recommendation already exists for this "
+                        "lesson and ruleset."
+                    ) from error
+                raise RepositoryIntegrityError(
+                    f"Database integrity error: {error}"
+                ) from error
+
+    def update_mission_recommendation(
+        self, recommendation: MissionRecommendation
+    ) -> None:
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE mission_recommendations SET status = ?, data = ? "
+                "WHERE id = ?",
+                (
+                    recommendation.status.value,
+                    recommendation.model_dump_json(),
+                    str(recommendation.mission_recommendation_id),
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(recommendation.mission_recommendation_id)
+
+    def find_mission_recommendation_by_id(
+        self, recommendation_id: UUID
+    ) -> MissionRecommendation | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM mission_recommendations WHERE id = ?",
+                (str(recommendation_id),),
+            ).fetchone()
+            return (
+                MissionRecommendation.model_validate_json(row[0])
+                if row
+                else None
+            )
+
+    def find_lesson_ruleset_recommendation(
+        self, mission_lesson_id: UUID, recommendation_ruleset_version: str
+    ) -> MissionRecommendation | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM mission_recommendations "
+                "WHERE mission_lesson_id = ? "
+                "AND recommendation_ruleset_version = ?",
+                (str(mission_lesson_id), recommendation_ruleset_version),
+            ).fetchone()
+            return (
+                MissionRecommendation.model_validate_json(row[0])
+                if row
+                else None
+            )
+
+    def list_mission_recommendations(
+        self, publication_id: UUID
+    ) -> list[MissionRecommendation]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT data FROM mission_recommendations "
+                "WHERE publication_id = ? ORDER BY created_at DESC, id DESC",
+                (str(publication_id),),
+            ).fetchall()
+            return [
+                MissionRecommendation.model_validate_json(row[0])
+                for row in rows
+            ]

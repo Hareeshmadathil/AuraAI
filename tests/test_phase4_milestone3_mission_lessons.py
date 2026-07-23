@@ -216,7 +216,7 @@ def test_sqlite_schema_and_exception_translation(tmp_path):
         tmp_path / "mission-control.db",
         allowed_root=tmp_path,
     )
-    assert repository.SCHEMA_VERSION == 4
+    assert repository.SCHEMA_VERSION == 5
     columns = {
         row[1]
         for row in repository.connection.execute(
@@ -249,7 +249,7 @@ def test_schema_v3_migration_preserves_existing_records(tmp_path):
     reopened = SQLiteMissionControlRepository(path, allowed_root=tmp_path)
     assert reopened.connection.execute(
         "SELECT version FROM schema_version"
-    ).fetchone()[0] == 4
+    ).fetchone()[0] == 5
     assert reopened.get_mission(mission.mission_id) == mission
     assert reopened.connection.execute(
         "SELECT name FROM sqlite_master "

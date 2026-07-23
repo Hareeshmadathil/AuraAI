@@ -18,10 +18,17 @@ from mission_control.models import (
     LessonEvidenceReference,
     LessonFinding,
     MissionLesson,
+    MissionRecommendation,
+    RecommendationEvidenceReference,
+    RecommendationProposal,
+    RecommendationStatus,
     MissionControlStatus,
 )
 from mission_control.analytics_interpretation import RULESET_VERSION
 from mission_control.mission_lessons import LESSON_RULESET_VERSION
+from mission_control.mission_recommendations import (
+    RECOMMENDATION_RULESET_VERSION,
+)
 from mission_control.service import MissionControlService
 from web_intelligence.evidence_providers import create_default_evidence_registry
 
@@ -109,7 +116,36 @@ class DashboardMissionLesson(AuraBaseModel):
     lesson_available: bool = False
     lesson_actionable: bool = False
     lesson_blocking_reason: str | None = None
+    recommendation: "DashboardMissionRecommendation" = Field(
+        default_factory=lambda: DashboardMissionRecommendation()
+    )
 
+
+class DashboardMissionRecommendation(AuraBaseModel):
+    latest_recommendation: MissionRecommendation | None = None
+    recommendation_history: list[MissionRecommendation] = Field(
+        default_factory=list
+    )
+    recommendation_count: int = 0
+    ruleset_version: str = RECOMMENDATION_RULESET_VERSION
+    confidence: str | None = None
+    summary: str | None = None
+    proposals: list[RecommendationProposal] = Field(default_factory=list)
+    rationale: str | None = None
+    evidence_references: list[RecommendationEvidenceReference] = Field(
+        default_factory=list
+    )
+    status: str | None = None
+    created_at: str | None = None
+    decided_at: str | None = None
+    decided_by: str | None = None
+    founder_note: str | None = None
+    source_mission_lesson_id: UUID | None = None
+    source_analytics_interpretation_id: UUID | None = None
+    recommendation_available: bool = False
+    creation_actionable: bool = False
+    review_actionable: bool = False
+    blocking_reason: str | None = None
 
 
 class DashboardAnalyticsInterpretation(AuraBaseModel):
@@ -280,6 +316,21 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
                 pub_record.publication_id
             )
             latest_lesson = lessons[0] if lessons else None
+            recommendations = (
+                control.repository.list_mission_recommendations(
+                    pub_record.publication_id
+                )
+            )
+            latest_recommendation = (
+                recommendations[0] if recommendations else None
+            )
+            current_recommendation_exists = bool(
+                latest_lesson
+                and control.repository.find_lesson_ruleset_recommendation(
+                    latest_lesson.mission_lesson_id,
+                    RECOMMENDATION_RULESET_VERSION,
+                )
+            )
             current_lesson_exists = bool(
                 latest_interpretation
                 and control.repository.find_interpretation_ruleset_lesson(
@@ -427,6 +478,95 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
                                 if latest_interpretation
                                 else "No analytics interpretation is available."
                             )
+                        ),
+                        recommendation=DashboardMissionRecommendation(
+                            latest_recommendation=latest_recommendation,
+                            recommendation_history=recommendations[1:],
+                            recommendation_count=len(recommendations),
+                            confidence=(
+                                latest_recommendation.confidence.value
+                                if latest_recommendation
+                                else None
+                            ),
+                            summary=(
+                                latest_recommendation.summary
+                                if latest_recommendation
+                                else None
+                            ),
+                            proposals=(
+                                list(latest_recommendation.proposals)
+                                if latest_recommendation
+                                else []
+                            ),
+                            rationale=(
+                                latest_recommendation.rationale
+                                if latest_recommendation
+                                else None
+                            ),
+                            evidence_references=(
+                                list(
+                                    latest_recommendation.evidence_references
+                                )
+                                if latest_recommendation
+                                else []
+                            ),
+                            status=(
+                                latest_recommendation.status.value
+                                if latest_recommendation
+                                else None
+                            ),
+                            created_at=(
+                                latest_recommendation.created_at.isoformat()
+                                if latest_recommendation
+                                else None
+                            ),
+                            decided_at=(
+                                latest_recommendation.decided_at.isoformat()
+                                if latest_recommendation
+                                and latest_recommendation.decided_at
+                                else None
+                            ),
+                            decided_by=(
+                                latest_recommendation.decided_by
+                                if latest_recommendation
+                                else None
+                            ),
+                            founder_note=(
+                                latest_recommendation.founder_note
+                                if latest_recommendation
+                                else None
+                            ),
+                            source_mission_lesson_id=(
+                                latest_lesson.mission_lesson_id
+                                if latest_lesson
+                                else None
+                            ),
+                            source_analytics_interpretation_id=(
+                                latest_lesson.analytics_interpretation_id
+                                if latest_lesson
+                                else None
+                            ),
+                            recommendation_available=bool(recommendations),
+                            creation_actionable=bool(
+                                latest_lesson
+                                and not current_recommendation_exists
+                            ),
+                            review_actionable=bool(
+                                latest_recommendation
+                                and latest_recommendation.status
+                                == RecommendationStatus.PENDING
+                            ),
+                            blocking_reason=(
+                                None
+                                if latest_lesson
+                                and not current_recommendation_exists
+                                else (
+                                    "Current ruleset recommendation already "
+                                    "exists."
+                                    if latest_lesson
+                                    else "No mission lesson is available."
+                                )
+                            ),
                         ),
                     ),
                 ),

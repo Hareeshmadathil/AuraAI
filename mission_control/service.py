@@ -20,6 +20,12 @@ from mission_control.mission_lessons import (
     build_mission_lesson_payload,
     mission_lesson_payload_hash,
 )
+from mission_control.mission_recommendations import (
+    RECOMMENDATION_RULESET_VERSION,
+    SUPPORTED_RECOMMENDATION_RULESETS,
+    build_mission_recommendation_payload,
+    mission_recommendation_payload_hash,
+)
 from mission_control.models import (
     AnalyticsInterpretation,
     AnalyticsMetrics,
@@ -30,7 +36,8 @@ from mission_control.models import (
     FailureClassification, ItemNotFoundError, MalformedCommandError,
     MismatchError,
     RepositoryConsistencyError, RepositoryIntegrityError, StaleContentError,
-    ConflictingDecisionError, MissionLesson, TaskCheckpoint,
+    ConflictingDecisionError, MissionLesson, MissionRecommendation,
+    RecommendationDecision, RecommendationStatus, TaskCheckpoint,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
     PublishingQueueStatus, RiskLevel, TaskRecord, TaskStatus, RenderJob,
     PublishingQueueItem, require_utc_datetime,
@@ -1369,6 +1376,250 @@ class MissionControlService:
                 "Concurrent mission lesson conflicts with deterministic output."
             )
         return lesson
+
+    def create_mission_recommendation(
+        self,
+        *,
+        mission_id: UUID,
+        mission_lesson_id: UUID,
+        created_by_actor: str,
+        recommendation_ruleset_version: str = (
+            RECOMMENDATION_RULESET_VERSION
+        ),
+    ) -> MissionRecommendation:
+        """Create one deterministic advisory recommendation."""
+
+        actor = created_by_actor.strip()
+        if not actor:
+            raise MalformedCommandError("An actor must be specified.")
+        if (
+            recommendation_ruleset_version
+            not in SUPPORTED_RECOMMENDATION_RULESETS
+        ):
+            raise MalformedCommandError(
+                "Unsupported mission recommendation ruleset."
+            )
+        mission = self.repository.get_mission(mission_id)
+        if mission is None:
+            raise ItemNotFoundError("Mission not found.")
+        lesson = self.repository.find_mission_lesson_by_id(mission_lesson_id)
+        if lesson is None:
+            raise ItemNotFoundError("Mission lesson not found.")
+        if lesson.mission_id != mission_id:
+            raise MismatchError("Mission lesson mission ID mismatch.")
+        interpretation = self.repository.find_interpretation_by_id(
+            lesson.analytics_interpretation_id
+        )
+        snapshot = self.repository.find_snapshot_by_id(
+            lesson.analytics_snapshot_id
+        )
+        publication = self.repository.get_publication_record_by_id(
+            lesson.publication_id
+        )
+        queue_item = self.repository.get_publishing_queue_item(
+            lesson.queue_item_id
+        )
+        if interpretation is None:
+            raise ItemNotFoundError("Analytics interpretation not found.")
+        if snapshot is None:
+            raise ItemNotFoundError("Analytics snapshot not found.")
+        if publication is None:
+            raise ItemNotFoundError("Publication record not found.")
+        if queue_item is None:
+            raise ItemNotFoundError("Publishing queue item not found.")
+        if not all((
+            interpretation.mission_id == mission_id,
+            snapshot.mission_id == mission_id,
+            publication.mission_id == mission_id,
+            queue_item.mission_id == mission_id,
+            interpretation.analytics_snapshot_id
+            == lesson.analytics_snapshot_id,
+            interpretation.publication_id == lesson.publication_id,
+            interpretation.queue_item_id == lesson.queue_item_id,
+            snapshot.publication_id == lesson.publication_id,
+            snapshot.queue_item_id == lesson.queue_item_id,
+            publication.queue_item_id == lesson.queue_item_id,
+            interpretation.destination == lesson.destination,
+            snapshot.destination == lesson.destination,
+            publication.destination == lesson.destination,
+            queue_item.destination == lesson.destination,
+            publication.content_hash == queue_item.manifest_hash,
+        )):
+            raise MismatchError(
+                "Mission recommendation source identity chain is inconsistent."
+            )
+        authoritative_lesson = build_mission_lesson_payload(
+            interpretation,
+            lesson_ruleset_version=lesson.lesson_ruleset_version,
+        )
+        if (
+            mission_lesson_payload_hash(authoritative_lesson)
+            != lesson.payload_hash
+        ):
+            raise StaleContentError("Mission lesson is not authoritative.")
+        lesson_fields = {
+            "confidence": authoritative_lesson.confidence,
+            "summary": authoritative_lesson.summary,
+            "findings": authoritative_lesson.findings,
+            "evidence_references": authoritative_lesson.evidence_references,
+            "strengths": authoritative_lesson.strengths,
+            "weaknesses": authoritative_lesson.weaknesses,
+            "unknowns": authoritative_lesson.unknowns,
+        }
+        if any(
+            getattr(lesson, name) != value
+            for name, value in lesson_fields.items()
+        ):
+            raise StaleContentError("Mission lesson content is inconsistent.")
+
+        payload = build_mission_recommendation_payload(
+            lesson,
+            recommendation_ruleset_version=recommendation_ruleset_version,
+        )
+        payload_hash = mission_recommendation_payload_hash(payload)
+        existing = self.repository.find_lesson_ruleset_recommendation(
+            mission_lesson_id,
+            recommendation_ruleset_version,
+        )
+        if existing:
+            if existing.payload_hash == payload_hash:
+                return existing
+            raise ConflictingDecisionError(
+                "Stored mission recommendation conflicts with deterministic "
+                "output."
+            )
+        created_at = utc_now()
+        recommendation = MissionRecommendation(
+            mission_id=mission_id,
+            publication_id=lesson.publication_id,
+            queue_item_id=lesson.queue_item_id,
+            analytics_snapshot_id=lesson.analytics_snapshot_id,
+            analytics_interpretation_id=lesson.analytics_interpretation_id,
+            mission_lesson_id=mission_lesson_id,
+            destination=lesson.destination,
+            recommendation_ruleset_version=recommendation_ruleset_version,
+            created_at=created_at,
+            created_by_actor=actor,
+            payload_hash=payload_hash,
+            confidence=payload.confidence,
+            summary=payload.summary,
+            proposals=payload.proposals,
+            rationale=payload.rationale,
+            evidence_references=payload.evidence_references,
+        )
+        try:
+            with self.repository.transaction():
+                self.repository.save_mission_recommendation(recommendation)
+                self.repository.append_event(EventRecord(
+                    mission_id=mission_id,
+                    event_type="analytics.recommendation_created",
+                    payload={
+                        "mission_recommendation_id": str(
+                            recommendation.mission_recommendation_id
+                        ),
+                        "mission_lesson_id": str(mission_lesson_id),
+                        "analytics_interpretation_id": str(
+                            lesson.analytics_interpretation_id
+                        ),
+                        "analytics_snapshot_id": str(
+                            lesson.analytics_snapshot_id
+                        ),
+                        "mission_id": str(mission_id),
+                        "publication_id": str(lesson.publication_id),
+                        "queue_item_id": str(lesson.queue_item_id),
+                        "destination": lesson.destination,
+                        "recommendation_ruleset_version": (
+                            recommendation_ruleset_version
+                        ),
+                        "confidence": recommendation.confidence.value,
+                        "created_at": created_at.isoformat(),
+                        "actor": actor,
+                        "payload_hash": payload_hash,
+                    },
+                ))
+        except DuplicateRecordError:
+            winner = self.repository.find_lesson_ruleset_recommendation(
+                mission_lesson_id,
+                recommendation_ruleset_version,
+            )
+            if winner is None:
+                raise RepositoryConsistencyError(
+                    "Expected duplicate recommendation but no winner exists."
+                )
+            if winner.payload_hash == payload_hash:
+                return winner
+            raise ConflictingDecisionError(
+                "Concurrent recommendation conflicts with deterministic output."
+            )
+        return recommendation
+
+    def review_mission_recommendation(
+        self,
+        *,
+        mission_id: UUID,
+        mission_recommendation_id: UUID,
+        decision: RecommendationDecision,
+        decided_by_actor: str,
+        founder_note: str | None = None,
+    ) -> MissionRecommendation:
+        """Persist one final founder review without executing it."""
+
+        actor = decided_by_actor.strip()
+        if not actor:
+            raise MalformedCommandError("An actor must be specified.")
+        note = founder_note.strip() if founder_note else None
+        if note and len(note) > 2000:
+            raise MalformedCommandError("Founder note is too long.")
+        target = (
+            RecommendationStatus.ACCEPTED
+            if decision == RecommendationDecision.ACCEPT
+            else RecommendationStatus.REJECTED
+        )
+        with self.repository.transaction():
+            current = self.repository.find_mission_recommendation_by_id(
+                mission_recommendation_id
+            )
+            if current is None:
+                raise ItemNotFoundError("Mission recommendation not found.")
+            if current.mission_id != mission_id:
+                raise MismatchError("Mission recommendation mission ID mismatch.")
+            if self.repository.get_mission(mission_id) is None:
+                raise ItemNotFoundError("Mission not found.")
+            if current.status != RecommendationStatus.PENDING:
+                if (
+                    current.status == target
+                    and current.decided_by == actor
+                    and current.founder_note == note
+                ):
+                    return current
+                raise ConflictingDecisionError(
+                    "Mission recommendation already has a final review."
+                )
+            decided_at = utc_now()
+            updated = MissionRecommendation.model_validate({
+                **current.model_dump(),
+                "status": target,
+                "decided_at": decided_at,
+                "decided_by": actor,
+                "founder_note": note,
+            })
+            self.repository.update_mission_recommendation(updated)
+            self.repository.append_event(EventRecord(
+                mission_id=mission_id,
+                event_type="analytics.recommendation_reviewed",
+                payload={
+                    "mission_recommendation_id": str(
+                        mission_recommendation_id
+                    ),
+                    "mission_id": str(mission_id),
+                    "previous_status": RecommendationStatus.PENDING.value,
+                    "new_status": target.value,
+                    "decided_at": decided_at.isoformat(),
+                    "decided_by": actor,
+                    "reason_provided": bool(note),
+                },
+            ))
+            return updated
 
 class DepartmentBus:
     """Synchronous injected bus; it never starts background or external work."""

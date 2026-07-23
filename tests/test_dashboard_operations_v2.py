@@ -115,6 +115,9 @@ def test_only_authoritative_mutation_routes_are_exposed(operations_context):
         "/missions/{mission_id}/analytics/{analytics_snapshot_id}/interpret",
         "/missions/{mission_id}/analytics/interpretations/"
         "{analytics_interpretation_id}/lesson",
+        "/missions/{mission_id}/lessons/{mission_lesson_id}/recommendation",
+        "/missions/{mission_id}/recommendations/"
+        "{mission_recommendation_id}/{decision}",
     }
 
 
