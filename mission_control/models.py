@@ -1,12 +1,13 @@
 """Authoritative Mission Control V1 domain contracts."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator, field_validator
 
 from core import AuraBaseModel, DepartmentName, TaskPriority, utc_now
 
@@ -418,6 +419,92 @@ class MalformedCommandError(AuraDomainError):
 
 class MismatchError(AuraDomainError):
     pass
+
+class DuplicateRecordError(AuraDomainError):
+    pass
+
+class RepositoryIntegrityError(AuraDomainError):
+    pass
+
+class RepositoryConsistencyError(AuraDomainError):
+    pass
+
+
+def require_utc_datetime(value: datetime, *, field_name: str) -> datetime:
+    """Validate and return one canonical timezone-aware UTC datetime."""
+
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field_name} must be timezone-aware UTC.")
+    if value.utcoffset() != timedelta(0):
+        raise ValueError(f"{field_name} must use UTC, not a non-zero offset.")
+    return value.astimezone(UTC)
+
+
+class AnalyticsMetrics(AuraBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    views: int | None = Field(default=None, ge=0)
+    impressions: int | None = Field(default=None, ge=0)
+    likes: int | None = Field(default=None, ge=0)
+    comments: int | None = Field(default=None, ge=0)
+    shares: int | None = Field(default=None, ge=0)
+    saves: int | None = Field(default=None, ge=0)
+    clicks: int | None = Field(default=None, ge=0)
+    watch_time_seconds: int | None = Field(default=None, ge=0)
+    followers_gained: int | None = Field(default=None, ge=0)
+    revenue_amount: Decimal | None = Field(default=None, ge=0)
+    revenue_currency: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z]{3}$",
+    )
+    import_note: str | None = Field(default=None, max_length=2000)
+
+
+    @field_validator("revenue_currency", mode="before")
+    @classmethod
+    def uppercase_currency(cls, value: object) -> object:
+        return value.upper() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_metrics_logic(self) -> "AnalyticsMetrics":
+        if self.revenue_amount is not None and not self.revenue_amount.is_finite():
+            raise ValueError("revenue_amount must be a finite number.")
+        if self.revenue_amount is not None and self.revenue_currency is None:
+            raise ValueError("revenue_amount requires revenue_currency.")
+        if self.revenue_currency is not None and self.revenue_amount is None:
+            raise ValueError("revenue_currency cannot be provided without revenue_amount.")
+
+        numeric_fields = [
+            self.views, self.impressions, self.likes, self.comments,
+            self.shares, self.saves, self.clicks, self.watch_time_seconds,
+            self.followers_gained, self.revenue_amount
+        ]
+        if all(f is None for f in numeric_fields):
+            raise ValueError("At least one measurable numeric metric must be provided.")
+
+        return self
+
+class AnalyticsSnapshot(AuraBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    analytics_snapshot_id: UUID = Field(default_factory=uuid4)
+    mission_id: UUID
+    publication_id: UUID
+    queue_item_id: UUID
+    destination: str = Field(min_length=1, max_length=150)
+    observed_at: datetime
+    imported_at: datetime
+    imported_by_actor: str = Field(min_length=1, max_length=150)
+    payload_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    metrics: AnalyticsMetrics
+
+    @field_validator("observed_at", "imported_at")
+    @classmethod
+    def validate_utc_timestamp(cls, value: datetime, info) -> datetime:
+        """Reject naive/non-UTC timestamps and normalize accepted UTC values."""
+
+        return require_utc_datetime(value, field_name=info.field_name)
+
 
 
 class MissionControlProjection(AuraBaseModel):

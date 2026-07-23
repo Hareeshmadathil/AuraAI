@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 import secrets
 from typing import Annotated
@@ -51,6 +53,27 @@ class ManualPublicationConfirmationForm(BaseModel):
     external_url: str | None = None
     external_post_id: str | None = None
     confirmation_note: str | None = None
+
+
+class AnalyticsImportForm(BaseModel):
+    """Strict local analytics import form."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    csrf_token: str = Field(min_length=32, max_length=200)
+    observed_at: str = Field(min_length=1, max_length=50)
+    views: int | None = Field(default=None, ge=0)
+    impressions: int | None = Field(default=None, ge=0)
+    likes: int | None = Field(default=None, ge=0)
+    comments: int | None = Field(default=None, ge=0)
+    shares: int | None = Field(default=None, ge=0)
+    saves: int | None = Field(default=None, ge=0)
+    clicks: int | None = Field(default=None, ge=0)
+    watch_time_seconds: int | None = Field(default=None, ge=0)
+    followers_gained: int | None = Field(default=None, ge=0)
+    revenue_amount: Decimal | None = Field(default=None, ge=0)
+    revenue_currency: str | None = None
+    import_note: str | None = Field(default=None, max_length=2000)
 
 class FounderDecisionForm(BaseModel):
     """Strict hash-bound local founder mutation payload."""
@@ -126,6 +149,16 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
         host = request.client.host if request.client else ""
         if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
             raise HTTPException(status_code=403, detail="Founder review is local-only.")
+
+    def parse_utc_timestamp(value: str) -> datetime:
+        """Parse an explicitly timezone-qualified UTC ISO-8601 timestamp."""
+
+        from mission_control.models import require_utc_datetime
+
+        if not value.endswith("Z") and "+" not in value:
+            raise ValueError("Timestamp must include an explicit UTC timezone.")
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return require_utc_datetime(parsed, field_name="observed_at")
 
     def render(
         *,
@@ -790,6 +823,165 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             url=f"/missions/{mission_id}/distribution",
             status_code=303,
         )
+
+
+    @router.post("/missions/{mission_id}/publications/{publication_id}/analytics/import", response_class=RedirectResponse)
+    async def import_analytics_snapshot(
+        mission_id: UUID,
+        publication_id: UUID,
+        request: Request,
+    ) -> RedirectResponse:
+        from mission_control.models import (
+            ItemNotFoundError,
+            StaleContentError,
+            ConflictingDecisionError,
+            MalformedCommandError,
+            MismatchError,
+            AnalyticsMetrics,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+        )
+
+        require_local(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(status_code=415, detail="Unsupported form content type.")
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Form is too large.")
+        try:
+            values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True)
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form_data = {key: value[0] for key, value in values.items()}
+            for key, value in tuple(form_data.items()):
+                if key not in {"csrf_token", "observed_at"} and not value.strip():
+                    form_data[key] = None
+            form = AnalyticsImportForm.model_validate(form_data)
+            cookie_token = request.cookies.get("auraai_csrf", "")
+            if not cookie_token or not secrets.compare_digest(
+                cookie_token,
+                form.csrf_token,
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail="CSRF validation failed.",
+                )
+            observed_at = parse_utc_timestamp(form.observed_at)
+            metrics = AnalyticsMetrics.model_validate(
+                form.model_dump(
+                    exclude={"csrf_token", "observed_at"},
+                    exclude_none=True,
+                )
+            )
+        except HTTPException:
+            raise
+        except (UnicodeDecodeError, ValueError, ValidationError, KeyError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid analytics import form.",
+            ) from error
+
+        try:
+            mission_commands(request).import_analytics_snapshot(
+                mission_id=mission_id,
+                publication_id=publication_id,
+                observed_at=observed_at,
+                metrics=metrics,
+                actor="Local Founder",
+            )
+        except ItemNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except (ConflictingDecisionError, StaleContentError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except (MismatchError, MalformedCommandError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except (RepositoryIntegrityError, RepositoryConsistencyError) as error:
+            raise HTTPException(
+                status_code=503,
+                detail="Analytics persistence is temporarily unavailable.",
+            ) from error
+
+        return RedirectResponse(
+            url=request.url_for("distribution_page").include_query_params(mission=mission_id),
+            status_code=303,
+        )
+
+    @router.get("/missions/{mission_id}/publications/{publication_id}/analytics/import", response_class=HTMLResponse)
+    def analytics_import_page(
+        mission_id: UUID,
+        publication_id: UUID,
+        request: Request,
+        service: DashboardServiceDependency,
+    ) -> HTMLResponse:
+        """Render one persisted publication's local analytics import page."""
+
+        require_local(request)
+        control = mission_control(request)
+        mission = control.repository.get_mission(mission_id)
+        if mission is None:
+            raise HTTPException(status_code=404, detail="Mission was not found.")
+        publication = control.repository.get_publication_record_by_id(
+            publication_id
+        )
+        if publication is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Publication was not found.",
+            )
+        if publication.mission_id != mission_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Publication mission ID mismatch.",
+            )
+        queue_item = control.repository.get_publishing_queue_item(
+            publication.queue_item_id
+        )
+        if queue_item is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Publishing queue item was not found.",
+            )
+        projection = build_operations_projection(control)
+        queue_view = next(
+            (
+                item
+                for item in projection.publishing_queue
+                if item.publication_id == publication_id
+                and item.mission_id == mission_id
+            ),
+            None,
+        )
+        if queue_view is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Publication was not found in the dashboard projection.",
+            )
+
+        csrf_token = secrets.token_urlsafe(32)
+        response = render(
+            request=request,
+            service=service,
+            template_name="analytics_import.html",
+            page_title="Import Analytics",
+            active_path="/distribution",
+            extra_context={
+                "mission": mission,
+                "publication": publication,
+                "queue_item": queue_view,
+                "analytics": queue_view.analytics,
+                "csrf_token": csrf_token,
+            },
+        )
+        response.set_cookie(
+            "auraai_csrf",
+            csrf_token,
+            httponly=True,
+            samesite="strict",
+            secure=False,
+            max_age=1800,
+        )
+        return response
 
     @router.post(
         "/api/missions/{mission_id}/run-next",

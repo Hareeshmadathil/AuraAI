@@ -9,11 +9,17 @@ from uuid import UUID
 
 from core import utc_now
 from mission_control.models import (
+    AnalyticsMetrics,
+    AnalyticsSnapshot,
     ApprovalRequest, ApprovalState, ArtifactApprovalState, ArtifactRecord,
     AttemptStatus, CheckpointKind, CheckpointResumability, DepartmentCommand,
-    DepartmentResult, ExecutionAttempt, FailureClassification, TaskCheckpoint,
+    DepartmentResult, DuplicateRecordError, ExecutionAttempt,
+    FailureClassification, ItemNotFoundError, MismatchError,
+    RepositoryConsistencyError, RepositoryIntegrityError, StaleContentError,
+    ConflictingDecisionError, TaskCheckpoint,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
-    RiskLevel, TaskRecord, TaskStatus, RenderJob, PublishingQueueItem,
+    PublishingQueueStatus, RiskLevel, TaskRecord, TaskStatus, RenderJob,
+    PublishingQueueItem, require_utc_datetime,
 )
 from mission_control.repository import MissionControlRepository
 
@@ -785,7 +791,6 @@ class MissionControlService:
         from mission_control.models import PublishingQueueStatus, ConflictingDecisionError, ItemNotFoundError, StaleContentError, MismatchError, MalformedCommandError, PublicationRecord, EventRecord
         import uuid
         import urllib.parse
-        import sqlite3
 
         # A. Early Validation
         queue_item = self.repository.get_publishing_queue_item(queue_item_id)
@@ -900,8 +905,12 @@ class MissionControlService:
                     }
                 ))
                 return updated_queue, new_record
-        except (ValueError, sqlite3.IntegrityError) as err:
-            if "UNIQUE constraint failed" in str(err) or "duplicate" in str(err).lower() or "integrity" in str(err).lower() or isinstance(err, sqlite3.IntegrityError):
+        except ValueError as err:
+            if (
+                "unique constraint failed" in str(err).lower()
+                or "duplicate" in str(err).lower()
+                or "integrity" in str(err).lower()
+            ):
                 winner = self.repository.get_publication_record(queue_item_id)
                 if winner:
                     if (winner.mission_id == mission_id and
@@ -938,6 +947,110 @@ class MissionControlService:
         return value
     def _update_task(self,value): self.repository.update_task(value)
 
+
+    def _generate_payload_hash(self, metrics: AnalyticsMetrics) -> str:
+        dump = metrics.model_dump(mode="json", exclude_none=True)
+        if "revenue_amount" in dump and dump["revenue_amount"] is not None:
+            from decimal import Decimal
+            normalized = Decimal(str(dump["revenue_amount"])).normalize()
+            s = format(normalized, 'f')
+            if '.' in s:
+                s = s.rstrip('0').rstrip('.')
+            dump["revenue_amount"] = s
+
+        encoded = json.dumps(dump, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    def import_analytics_snapshot(
+        self,
+        *,
+        mission_id: UUID,
+        publication_id: UUID,
+        observed_at: datetime,
+        imported_by_actor: str,
+        metrics: AnalyticsMetrics,
+    ) -> AnalyticsSnapshot:
+        now = utc_now()
+        observed_at = require_utc_datetime(
+            observed_at,
+            field_name="observed_at",
+        )
+        if observed_at > now + timedelta(minutes=5):
+            raise StaleContentError(f"Observation timestamp {observed_at} is too far in the future.")
+
+        pub_record = self.repository.get_publication_record_by_id(publication_id)
+        if not pub_record:
+            raise ItemNotFoundError("Publication record not found.")
+
+        if pub_record.mission_id != mission_id:
+            raise MismatchError("Publication record mission ID mismatch.")
+
+        queue_item = self.repository.get_publishing_queue_item(pub_record.queue_item_id)
+        if not queue_item:
+            raise ItemNotFoundError("Publishing queue item not found.")
+
+        if queue_item.mission_id != mission_id:
+            raise MismatchError("Publishing queue item mission ID mismatch.")
+        if queue_item.queue_item_id != pub_record.queue_item_id:
+            raise MismatchError("Publication queue item identity mismatch.")
+        if queue_item.destination != pub_record.destination:
+            raise MismatchError("Publication destination mismatch.")
+        if queue_item.manifest_hash != pub_record.content_hash:
+            raise MismatchError("Publication content hash mismatch.")
+
+        if queue_item.status != PublishingQueueStatus.PUBLISHED_CONFIRMED:
+            raise ConflictingDecisionError("Publication is not confirmed.")
+
+        payload_hash = self._generate_payload_hash(metrics)
+
+        existing = self.repository.find_observation_snapshot(publication_id, observed_at)
+        if existing:
+            if existing.payload_hash == payload_hash:
+                return existing
+            raise ConflictingDecisionError("Conflicting analytics evidence for the same observation time.")
+
+        snapshot = AnalyticsSnapshot(
+            mission_id=mission_id,
+            publication_id=publication_id,
+            queue_item_id=queue_item.queue_item_id,
+            destination=pub_record.destination,
+            observed_at=observed_at,
+            imported_at=now,
+            imported_by_actor=imported_by_actor,
+            payload_hash=payload_hash,
+            metrics=metrics,
+        )
+
+        try:
+            with self.repository.transaction():
+                self.repository.save_analytics_snapshot(snapshot)
+
+                event = EventRecord(
+                    mission_id=mission_id,
+                    task_id=None,
+                    event_type="analytics.snapshot_imported",
+                    payload={
+                        "analytics_snapshot_id": str(snapshot.analytics_snapshot_id),
+                        "mission_id": str(mission_id),
+                        "publication_id": str(publication_id),
+                        "queue_item_id": str(snapshot.queue_item_id),
+                        "destination": snapshot.destination,
+                        "observed_at": observed_at.isoformat(),
+                        "imported_at": now.isoformat(),
+                        "actor": imported_by_actor,
+                        "payload_hash": payload_hash,
+                    },
+                )
+                self.repository.append_event(event)
+        except DuplicateRecordError:
+            winner = self.repository.find_observation_snapshot(publication_id, observed_at)
+            if not winner:
+                raise RepositoryConsistencyError("Expected duplicate snapshot but none found.")
+            if winner.payload_hash == payload_hash:
+                return winner
+            raise ConflictingDecisionError("Conflicting analytics evidence for the same observation time.")
+
+        return snapshot
 
 class DepartmentBus:
     """Synchronous injected bus; it never starts background or external work."""

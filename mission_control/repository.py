@@ -6,6 +6,7 @@ import sqlite3
 import threading
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator, TypeVar
 from uuid import UUID
@@ -13,8 +14,19 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from mission_control.models import (
-    ApprovalRequest, ArtifactRecord, EventRecord, ExecutionAttempt,
-    MissionRecord, TaskCheckpoint, TaskRecord, RenderJob, PublishingQueueItem,
+    DuplicateRecordError,
+    RepositoryIntegrityError,
+    AnalyticsSnapshot,
+    ApprovalRequest,
+    ArtifactRecord,
+    EventRecord,
+    ExecutionAttempt,
+    MissionRecord,
+    TaskCheckpoint,
+    TaskRecord,
+    TaskStatus,
+    RenderJob,
+    PublishingQueueItem,
     PublicationRecord,
 )
 
@@ -85,7 +97,24 @@ class MissionControlRepository(ABC):
     @abstractmethod
     def save_publication_record(self, value: 'PublicationRecord') -> None: ...
     @abstractmethod
+    def get_publication_record_by_id(self, publication_id: UUID) -> 'PublicationRecord' | None: ...
+    @abstractmethod
     def get_publication_record(self, queue_item_id: UUID) -> 'PublicationRecord' | None: ...
+    @abstractmethod
+    def save_analytics_snapshot(self, snapshot: AnalyticsSnapshot) -> None: ...
+    @abstractmethod
+    def find_snapshot_by_id(self, snapshot_id: UUID) -> AnalyticsSnapshot | None: ...
+    @abstractmethod
+    def find_observation_snapshot(
+        self,
+        publication_id: UUID,
+        observed_at: datetime,
+    ) -> AnalyticsSnapshot | None: ...
+    @abstractmethod
+    def list_analytics_snapshots(
+        self,
+        publication_id: UUID,
+    ) -> list[AnalyticsSnapshot]: ...
     @abstractmethod
     @contextmanager
     def transaction(self) -> Iterator[None]: ...
@@ -103,6 +132,7 @@ class InMemoryMissionControlRepository(MissionControlRepository):
         self.render_jobs: dict[UUID, RenderJob] = {}
         self.publishing_queue: dict[UUID, PublishingQueueItem] = {}
         self.publication_records: dict[UUID, PublicationRecord] = {}
+        self.analytics_snapshots: dict[UUID, AnalyticsSnapshot] = {}
         self._lock = threading.RLock()
 
     @contextmanager
@@ -149,7 +179,79 @@ class InMemoryMissionControlRepository(MissionControlRepository):
     def get_publishing_queue_item(self, queue_item_id): return self.publishing_queue.get(queue_item_id)
     def list_publishing_queue_items(self, mission_id=None): return [v for v in self.publishing_queue.values() if mission_id is None or v.mission_id == mission_id]
     def save_publication_record(self, value): self._insert(self.publication_records, value.queue_item_id, value)
+
+    def get_publication_record_by_id(self, publication_id: UUID) -> 'PublicationRecord' | None:
+        with self._lock:
+            return next(
+                (
+                    record.model_copy(deep=True)
+                    for record in self.publication_records.values()
+                    if record.publication_id == publication_id
+                ),
+                None,
+            )
+
     def get_publication_record(self, queue_item_id): return self.publication_records.get(queue_item_id)
+
+    def save_analytics_snapshot(self, snapshot: AnalyticsSnapshot) -> None:
+        with self._lock:
+            if self.find_observation_snapshot(
+                snapshot.publication_id,
+                snapshot.observed_at,
+            ) is not None:
+                raise DuplicateRecordError(
+                    "Analytics snapshot already exists for this publication "
+                    "and observation time."
+                )
+            self._insert(
+                self.analytics_snapshots,
+                snapshot.analytics_snapshot_id,
+                snapshot,
+            )
+
+    def find_snapshot_by_id(
+        self,
+        snapshot_id: UUID,
+    ) -> AnalyticsSnapshot | None:
+        with self._lock:
+            snapshot = self.analytics_snapshots.get(snapshot_id)
+            return snapshot.model_copy(deep=True) if snapshot else None
+
+    def find_observation_snapshot(
+        self,
+        publication_id: UUID,
+        observed_at: datetime,
+    ) -> AnalyticsSnapshot | None:
+        with self._lock:
+            return next(
+                (
+                    snapshot.model_copy(deep=True)
+                    for snapshot in self.analytics_snapshots.values()
+                    if snapshot.publication_id == publication_id
+                    and snapshot.observed_at == observed_at
+                ),
+                None,
+            )
+
+    def list_analytics_snapshots(
+        self,
+        publication_id: UUID,
+    ) -> list[AnalyticsSnapshot]:
+        with self._lock:
+            snapshots = [
+                snapshot.model_copy(deep=True)
+                for snapshot in self.analytics_snapshots.values()
+                if snapshot.publication_id == publication_id
+            ]
+        return sorted(
+            snapshots,
+            key=lambda snapshot: (
+                snapshot.observed_at,
+                snapshot.imported_at,
+                snapshot.analytics_snapshot_id.int,
+            ),
+            reverse=True,
+        )
 
 
 class SQLiteMissionControlRepository(MissionControlRepository):
@@ -182,6 +284,19 @@ class SQLiteMissionControlRepository(MissionControlRepository):
             CREATE TABLE IF NOT EXISTS render_jobs(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), task_id TEXT NOT NULL REFERENCES tasks(id), data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS publishing_queue(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS publication_records(id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), queue_item_id TEXT UNIQUE NOT NULL REFERENCES publishing_queue(id), data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS analytics_snapshots(
+                id TEXT PRIMARY KEY,
+                mission_id TEXT NOT NULL REFERENCES missions(id),
+                publication_id TEXT NOT NULL REFERENCES publication_records(id),
+                queue_item_id TEXT NOT NULL REFERENCES publishing_queue(id),
+                destination TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                imported_at TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                data TEXT NOT NULL,
+                UNIQUE(publication_id, observed_at)
+            );
+            CREATE INDEX IF NOT EXISTS idx_analytics_publication_observed ON analytics_snapshots(publication_id, observed_at DESC);
             """)
             row=self.connection.execute("SELECT version FROM schema_version").fetchone()
             if row is None: self.connection.execute("INSERT INTO schema_version(version) VALUES (?)",(self.SCHEMA_VERSION,))
@@ -321,7 +436,78 @@ class SQLiteMissionControlRepository(MissionControlRepository):
 
     def save_publication_record(self, v):
         with self._lock: self._insert("INSERT INTO publication_records(id,mission_id,queue_item_id,data) VALUES (?,?,?,?)",(str(v.publication_id),str(v.mission_id),str(v.queue_item_id),self._json(v)))
+
+    def get_publication_record_by_id(self, publication_id: UUID) -> 'PublicationRecord' | None:
+        row = self.connection.execute(
+            'SELECT data FROM publication_records WHERE id = ?',
+            (str(publication_id),),
+        ).fetchone()
+        return PublicationRecord.model_validate_json(row[0]) if row else None
+
     def get_publication_record(self, queue_item_id):
         with self._lock:
             row = self.connection.execute("SELECT data FROM publication_records WHERE queue_item_id = ?", (str(queue_item_id),)).fetchone()
             return PublicationRecord.model_validate_json(row[0]) if row else None
+
+    def save_analytics_snapshot(self, snapshot: AnalyticsSnapshot) -> None:
+        with self._lock:
+            try:
+                self.connection.execute(
+                    "INSERT INTO analytics_snapshots(id, mission_id, publication_id, queue_item_id, destination, observed_at, imported_at, payload_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(snapshot.analytics_snapshot_id),
+                        str(snapshot.mission_id),
+                        str(snapshot.publication_id),
+                        str(snapshot.queue_item_id),
+                        snapshot.destination,
+                        snapshot.observed_at.isoformat(),
+                        snapshot.imported_at.isoformat(),
+                        snapshot.payload_hash,
+                        snapshot.model_dump_json(exclude_none=True),
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                error_msg = str(error).lower()
+                expected_collision = (
+                    "unique constraint failed: "
+                    "analytics_snapshots.publication_id, "
+                    "analytics_snapshots.observed_at"
+                )
+                if expected_collision in error_msg:
+                    raise DuplicateRecordError(
+                        "Analytics snapshot already exists for this "
+                        "publication and observation time."
+                    ) from error
+                raise RepositoryIntegrityError(
+                    f"Database integrity error: {error}"
+                ) from error
+
+    def find_snapshot_by_id(self, snapshot_id: UUID) -> AnalyticsSnapshot | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM analytics_snapshots WHERE id = ?",
+                (str(snapshot_id),),
+            ).fetchone()
+            return AnalyticsSnapshot.model_validate_json(row[0]) if row else None
+
+    def list_analytics_snapshots(self, publication_id: UUID) -> list[AnalyticsSnapshot]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT data FROM analytics_snapshots "
+                "WHERE publication_id = ? "
+                "ORDER BY observed_at DESC, imported_at DESC, id DESC",
+                (str(publication_id),),
+            ).fetchall()
+            return [
+                AnalyticsSnapshot.model_validate_json(row[0])
+                for row in rows
+            ]
+
+    def find_observation_snapshot(self, publication_id: UUID, observed_at: datetime) -> AnalyticsSnapshot | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM analytics_snapshots "
+                "WHERE publication_id = ? AND observed_at = ?",
+                (str(publication_id), observed_at.isoformat()),
+            ).fetchone()
+            return AnalyticsSnapshot.model_validate_json(row[0]) if row else None

@@ -8,7 +8,13 @@ from uuid import UUID
 from pydantic import Field
 
 from core import AuraBaseModel, utc_now
-from mission_control.models import ApprovalRequest, ApprovalState, EventRecord, MissionControlStatus
+from mission_control.models import (
+    AnalyticsSnapshot,
+    ApprovalRequest,
+    ApprovalState,
+    EventRecord,
+    MissionControlStatus,
+)
 from mission_control.service import MissionControlService
 from web_intelligence.evidence_providers import create_default_evidence_registry
 
@@ -74,6 +80,18 @@ class CapabilityView(AuraBaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
 
 
+
+class DashboardPublicationAnalytics(AuraBaseModel):
+    latest_snapshot: AnalyticsSnapshot | None = None
+    historical_snapshots: list[AnalyticsSnapshot] = Field(default_factory=list)
+    snapshot_count: int = 0
+    latest_observed_at: str | None = None
+    latest_imported_at: str | None = None
+    has_analytics: bool = False
+    analytics_actionable: bool = False
+    analytics_blocking_reason: str | None = None
+
+
 class DashboardPublishingQueueItem(AuraBaseModel):
     mission_id: UUID
     queue_item_id: UUID
@@ -93,6 +111,7 @@ class DashboardPublishingQueueItem(AuraBaseModel):
     blocking_reason: str | None
     is_publication_actionable: bool = False
     publication_blocking_reason: str | None = None
+    analytics: DashboardPublicationAnalytics | None = None
 
 
 class DashboardOperationsProjection(AuraBaseModel):
@@ -188,6 +207,30 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
         else:
             is_pub_actionable = True
 
+
+        analytics_view = None
+        if pub_record:
+            snapshots = control.repository.list_analytics_snapshots(pub_record.publication_id)
+            latest = snapshots[0] if snapshots else None
+
+            a_blocking = None
+            a_actionable = False
+            if queue_item.status != PublishingQueueStatus.PUBLISHED_CONFIRMED:
+                a_blocking = "Publication not confirmed."
+            else:
+                a_actionable = True
+
+            analytics_view = DashboardPublicationAnalytics(
+                latest_snapshot=latest,
+                historical_snapshots=snapshots[1:] if len(snapshots) > 1 else [],
+                snapshot_count=len(snapshots),
+                latest_observed_at=latest.observed_at.isoformat() if latest else None,
+                latest_imported_at=latest.imported_at.isoformat() if latest else None,
+                has_analytics=bool(snapshots),
+                analytics_actionable=a_actionable,
+                analytics_blocking_reason=a_blocking
+            )
+
         publishing_queue.append(DashboardPublishingQueueItem(
             mission_id=queue_item.mission_id,
             queue_item_id=queue_item.queue_item_id,
@@ -207,6 +250,7 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
             blocking_reason=blocking_reason,
             is_publication_actionable=is_pub_actionable,
             publication_blocking_reason=pub_blocking_reason,
+            analytics=analytics_view,
         ))
 
     return DashboardOperationsProjection(

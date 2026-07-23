@@ -34,6 +34,20 @@
             {% if queue_item.founder_note %}
             <p><strong>Note:</strong> {{ queue_item.founder_note }}</p>
             {% endif %}
+            {% if queue_item.analytics %}
+            <hr style="margin-top: 1rem; margin-bottom: 1rem; border: none; border-top: 1px solid var(--color-border);">
+            <h4 style="margin-top: 0;">Analytics</h4>
+            {% if queue_item.analytics.has_analytics %}
+            <p><strong>Snapshots:</strong> {{ queue_item.analytics.snapshot_count }}</p>
+            <p><strong>Latest Observation:</strong> {{ queue_item.analytics.latest_observed_at }}</p>
+            <p><a href="/missions/{{ queue_item.mission_id }}/publications/{{ queue_item.publication_id }}/analytics/import" class="button button-outline" style="font-size: 0.85em; padding: 0.25rem 0.5rem;">Import Additional Snapshot</a></p>
+            {% elif queue_item.analytics.analytics_actionable %}
+            <p><a href="/missions/{{ queue_item.mission_id }}/publications/{{ queue_item.publication_id }}/analytics/import" class="button button-outline" style="font-size: 0.85em; padding: 0.25rem 0.5rem;">Import Analytics Snapshot</a></p>
+            {% else %}
+            <p><em>Not Actionable:</em> {{ queue_item.analytics.analytics_blocking_reason }}</p>
+            {% endif %}
+            {% endif %}
+
         </div>
         {% elif queue_item.is_publication_actionable %}
         <form method="post" action="/missions/{{ queue_item.mission_id }}/publishing-queue/{{ queue_item.queue_item_id }}/confirm-publication" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; background-color: var(--color-surface-sunken); padding: 1rem; border-radius: 4px; border: 1px solid var(--color-border);">

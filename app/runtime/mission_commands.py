@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from uuid import UUID
+from datetime import datetime
 
 from pydantic import Field
 
@@ -14,6 +15,8 @@ from mission_control.models import (
     MissionRecord,
     PublishingQueueItem,
     TaskRecord,
+    AnalyticsMetrics,
+    AnalyticsSnapshot,
 )
 from runtime_engine.runtime_manager import MissionRuntimeManager
 from runtime_engine.recovery import RecoveryReport
@@ -163,4 +166,24 @@ class MissionCommandService:
             external_post_id=external_post_id,
             confirmation_note=confirmation_note,
             actor=actor,
+        )
+
+    def import_analytics_snapshot(
+        self,
+        *,
+        mission_id: UUID,
+        publication_id: UUID,
+        observed_at: datetime,
+        metrics: AnalyticsMetrics,
+        actor: str,
+    ) -> AnalyticsSnapshot:
+        if not actor or not actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+
+        return self._runtime_manager.mission_control.import_analytics_snapshot(
+            mission_id=mission_id,
+            publication_id=publication_id,
+            observed_at=observed_at,
+            imported_by_actor=actor,
+            metrics=metrics,
         )

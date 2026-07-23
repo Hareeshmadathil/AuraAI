@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block heading %}Import Analytics Snapshot{% endblock %}
+{% block content %}
+
+<section class="panel page-panel">
+    <p class="eyebrow">Mission: {{ mission.title }}</p>
+    <h2>Import Snapshot for {{ queue_item.destination }}</h2>
+    <p>Enter source-reported measurements only. AuraAI stores this evidence
+       without interpreting, scoring, or advancing the mission.</p>
+</section>
+
+<section class="dashboard-grid">
+    <article class="panel">
+        <p class="eyebrow">Publication Details</p>
+        {% if publication.external_url %}
+        <p><strong>URL:</strong> <a href="{{ publication.external_url }}" target="_blank" rel="noopener">{{ publication.external_url }}</a></p>
+        {% endif %}
+        <p><strong>Content hash:</strong> <code>{{ publication.content_hash }}</code></p>
+        <p><strong>Status:</strong> {{ queue_item.queue_status | status_label }}</p>
+    </article>
+
+    <article class="panel">
+        <p class="eyebrow">Import Form</p>
+        <form method="post" action="/missions/{{ mission_id }}/publications/{{ publication_id }}/analytics/import" style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <label>Observed At (UTC ISO-8601)
+                <input type="text" name="observed_at" required
+                       pattern=".*(Z|\+00:00)$"
+                       style="width: 100%; padding: 0.25rem;"
+                       placeholder="2026-07-21T10:00:00Z"
+                       aria-describedby="observed-at-help">
+            </label>
+            <small id="observed-at-help">An explicit UTC suffix, Z or +00:00, is required.</small>
+
+            <label>Views
+                <input type="number" name="views" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Impressions
+                <input type="number" name="impressions" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Likes
+                <input type="number" name="likes" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Comments
+                <input type="number" name="comments" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Shares
+                <input type="number" name="shares" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Saves
+                <input type="number" name="saves" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Clicks
+                <input type="number" name="clicks" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Watch Time (seconds)
+                <input type="number" name="watch_time_seconds" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <label>Followers Gained
+                <input type="number" name="followers_gained" min="0" style="width: 100%; padding: 0.25rem;">
+            </label>
+
+            <div style="display: flex; gap: 1rem;">
+                <label style="flex: 1;">Revenue Amount
+                    <input type="number" name="revenue_amount" step="any" min="0" style="width: 100%; padding: 0.25rem;">
+                </label>
+                <label style="flex: 1;">Currency (ISO)
+                    <input type="text" name="revenue_currency" minlength="3"
+                           maxlength="3" pattern="[A-Za-z]{3}"
+                           style="width: 100%; padding: 0.25rem;"
+                           placeholder="USD">
+                </label>
+            </div>
+
+            <label>Import Note
+                <textarea name="import_note" rows="2" style="width: 100%; padding: 0.25rem;"></textarea>
+            </label>
+
+            <button type="submit" class="button" style="margin-top: 1rem;">Submit Analytics Snapshot</button>
+            <a href="/missions/{{ mission_id }}/distribution" style="text-align: center; margin-top: 0.5rem; text-decoration: none;">Cancel</a>
+        </form>
+    </article>
+</section>
+
+<section class="panel page-panel">
+    <p class="eyebrow">Persisted Analytics Evidence</p>
+    {% if analytics and analytics.has_analytics %}
+    <p><strong>Snapshots:</strong> {{ analytics.snapshot_count }}</p>
+    <p><strong>Latest observation:</strong> {{ analytics.latest_observed_at }}</p>
+    <p><strong>Latest import:</strong> {{ analytics.latest_imported_at }}</p>
+    <ul>
+        {% for snapshot in [analytics.latest_snapshot] + analytics.historical_snapshots %}
+        <li>
+            <time datetime="{{ snapshot.observed_at.isoformat() }}">{{ snapshot.observed_at.isoformat() }}</time>
+            — hash <code>{{ snapshot.payload_hash }}</code>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No analytics snapshots have been imported for this publication.</p>
+    {% endif %}
+</section>
+
+{% endblock %}
