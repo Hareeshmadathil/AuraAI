@@ -31,6 +31,7 @@ from mission_control.models import (
     RenderJob,
     PublishingQueueItem,
     PublicationRecord,
+    RecommendationMissionLineage,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -178,6 +179,18 @@ class MissionControlRepository(ABC):
         self, publication_id: UUID
     ) -> list[MissionRecommendation]: ...
     @abstractmethod
+    def save_recommendation_mission_lineage(
+        self, lineage: RecommendationMissionLineage
+    ) -> None: ...
+    @abstractmethod
+    def find_recommendation_mission_lineage(
+        self, recommendation_id: UUID
+    ) -> RecommendationMissionLineage | None: ...
+    @abstractmethod
+    def find_successor_mission_lineage(
+        self, successor_mission_id: UUID
+    ) -> RecommendationMissionLineage | None: ...
+    @abstractmethod
     @contextmanager
     def transaction(self) -> Iterator[None]: ...
 
@@ -198,6 +211,9 @@ class InMemoryMissionControlRepository(MissionControlRepository):
         self.analytics_interpretations: dict[UUID, AnalyticsInterpretation] = {}
         self.mission_lessons: dict[UUID, MissionLesson] = {}
         self.mission_recommendations: dict[UUID, MissionRecommendation] = {}
+        self.recommendation_mission_lineages: dict[
+            UUID, RecommendationMissionLineage
+        ] = {}
         self._lock = threading.RLock()
 
     @contextmanager
@@ -510,10 +526,54 @@ class InMemoryMissionControlRepository(MissionControlRepository):
             reverse=True,
         )
 
+    def save_recommendation_mission_lineage(
+        self, lineage: RecommendationMissionLineage
+    ) -> None:
+        with self._lock:
+            if lineage.source_recommendation_id in (
+                self.recommendation_mission_lineages
+            ):
+                raise DuplicateRecordError(
+                    "A successor mission already exists for this "
+                    "recommendation."
+                )
+            if any(
+                value.successor_mission_id == lineage.successor_mission_id
+                for value in self.recommendation_mission_lineages.values()
+            ):
+                raise DuplicateRecordError(
+                    "Successor mission lineage already exists."
+                )
+            self.recommendation_mission_lineages[
+                lineage.source_recommendation_id
+            ] = lineage.model_copy(deep=True)
+
+    def find_recommendation_mission_lineage(
+        self, recommendation_id: UUID
+    ) -> RecommendationMissionLineage | None:
+        with self._lock:
+            value = self.recommendation_mission_lineages.get(
+                recommendation_id
+            )
+            return value.model_copy(deep=True) if value else None
+
+    def find_successor_mission_lineage(
+        self, successor_mission_id: UUID
+    ) -> RecommendationMissionLineage | None:
+        with self._lock:
+            return next(
+                (
+                    value.model_copy(deep=True)
+                    for value in self.recommendation_mission_lineages.values()
+                    if value.successor_mission_id == successor_mission_id
+                ),
+                None,
+            )
+
 
 class SQLiteMissionControlRepository(MissionControlRepository):
     """SQLite JSON-record repository with foreign keys and atomic writes."""
-    SCHEMA_VERSION = 5
+    SCHEMA_VERSION = 6
 
     def __init__(self, database_path: Path, *, allowed_root: Path) -> None:
         root = allowed_root.resolve()
@@ -605,6 +665,17 @@ class SQLiteMissionControlRepository(MissionControlRepository):
             );
             CREATE INDEX IF NOT EXISTS idx_recommendations_publication_time
             ON mission_recommendations(publication_id, created_at DESC);
+            CREATE TABLE IF NOT EXISTS recommendation_mission_lineage(
+                source_recommendation_id TEXT PRIMARY KEY
+                    REFERENCES mission_recommendations(id),
+                successor_mission_id TEXT UNIQUE NOT NULL
+                    REFERENCES missions(id),
+                source_mission_id TEXT NOT NULL REFERENCES missions(id),
+                created_at TEXT NOT NULL,
+                data TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_lineage_source_mission
+            ON recommendation_mission_lineage(source_mission_id, created_at DESC);
             """)
             row = self.connection.execute(
                 "SELECT version FROM schema_version"
@@ -614,7 +685,7 @@ class SQLiteMissionControlRepository(MissionControlRepository):
                     "INSERT INTO schema_version(version) VALUES (?)",
                     (self.SCHEMA_VERSION,),
                 )
-            elif row[0] in {1, 2, 3, 4}:
+            elif row[0] in {1, 2, 3, 4, 5}:
                 self.connection.execute(
                     "UPDATE schema_version SET version = ?",
                     (self.SCHEMA_VERSION,),
@@ -1102,3 +1173,66 @@ class SQLiteMissionControlRepository(MissionControlRepository):
                 MissionRecommendation.model_validate_json(row[0])
                 for row in rows
             ]
+
+    def save_recommendation_mission_lineage(
+        self, lineage: RecommendationMissionLineage
+    ) -> None:
+        with self._lock:
+            try:
+                self.connection.execute(
+                    "INSERT INTO recommendation_mission_lineage("
+                    "source_recommendation_id, successor_mission_id, "
+                    "source_mission_id, created_at, data) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        str(lineage.source_recommendation_id),
+                        str(lineage.successor_mission_id),
+                        str(lineage.source_mission_id),
+                        lineage.created_at.isoformat(),
+                        lineage.model_dump_json(),
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                message = str(error).lower()
+                if (
+                    "recommendation_mission_lineage."
+                    "source_recommendation_id" in message
+                    or "recommendation_mission_lineage."
+                    "successor_mission_id" in message
+                ):
+                    raise DuplicateRecordError(
+                        "Recommendation successor lineage already exists."
+                    ) from error
+                raise RepositoryIntegrityError(
+                    f"Database integrity error: {error}"
+                ) from error
+
+    def find_recommendation_mission_lineage(
+        self, recommendation_id: UUID
+    ) -> RecommendationMissionLineage | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM recommendation_mission_lineage "
+                "WHERE source_recommendation_id = ?",
+                (str(recommendation_id),),
+            ).fetchone()
+            return (
+                RecommendationMissionLineage.model_validate_json(row[0])
+                if row
+                else None
+            )
+
+    def find_successor_mission_lineage(
+        self, successor_mission_id: UUID
+    ) -> RecommendationMissionLineage | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT data FROM recommendation_mission_lineage "
+                "WHERE successor_mission_id = ?",
+                (str(successor_mission_id),),
+            ).fetchone()
+            return (
+                RecommendationMissionLineage.model_validate_json(row[0])
+                if row
+                else None
+            )

@@ -66,6 +66,27 @@
   {% endif %}
 </section>
 {% endif %}
+{% if latest_recommendation.status.value == "accepted" %}
+<section class="panel page-panel">
+  <p class="eyebrow">Closed learning loop</p>
+  {% if successor_mission %}
+  <p>A successor mission already exists. Repeated requests return this same
+     canonical mission.</p>
+  <a class="button"
+     href="/missions/{{ successor_mission.mission_id }}/review">
+    View successor mission
+  </a>
+  {% else %}
+  <p>The accepted recommendation remains advisory until the founder explicitly
+     creates a successor mission.</p>
+  <form method="post"
+        action="/missions/{{ mission.mission_id }}/recommendations/{{ latest_recommendation.mission_recommendation_id }}/create-mission">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="button">Create Mission From Recommendation</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
 {% else %}
 <section class="panel page-panel">
   <p>No recommendation exists for this lesson and current ruleset.</p>

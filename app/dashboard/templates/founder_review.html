@@ -19,6 +19,13 @@
         <div><dt>Approvals</dt><dd>{{ review.mission.required_approvals | join(', ') or 'None declared' }}</dd></div>
         <div><dt>Execution</dt><dd>offline={{ review.mission.offline_execution }}, providers={{ review.mission.provider_requirements | join(', ') }}, render={{ review.mission.rendering_required }}, publish={{ review.mission.publishing_required }}</dd></div>
     </dl>
+    {% if source_lineage %}
+    <p>This mission was explicitly created from an accepted recommendation.</p>
+    <a class="button"
+       href="/missions/{{ source_lineage.source_mission_id }}/lessons/{{ source_lineage.source_lesson_id }}/recommendation">
+        View source recommendation
+    </a>
+    {% endif %}
 </section>
 
 <div class="dashboard-grid">

@@ -146,6 +146,11 @@ class DashboardMissionRecommendation(AuraBaseModel):
     creation_actionable: bool = False
     review_actionable: bool = False
     blocking_reason: str | None = None
+    successor_mission_id: UUID | None = None
+    successor_mission_title: str | None = None
+    successor_exists: bool = False
+    successor_creation_actionable: bool = False
+    successor_blocking_reason: str | None = None
 
 
 class DashboardAnalyticsInterpretation(AuraBaseModel):
@@ -323,6 +328,20 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
             )
             latest_recommendation = (
                 recommendations[0] if recommendations else None
+            )
+            successor_lineage = (
+                control.repository.find_recommendation_mission_lineage(
+                    latest_recommendation.mission_recommendation_id
+                )
+                if latest_recommendation
+                else None
+            )
+            successor_mission = (
+                control.repository.get_mission(
+                    successor_lineage.successor_mission_id
+                )
+                if successor_lineage
+                else None
             )
             current_recommendation_exists = bool(
                 latest_lesson
@@ -565,6 +584,39 @@ def build_operations_projection(control: MissionControlService) -> DashboardOper
                                     "exists."
                                     if latest_lesson
                                     else "No mission lesson is available."
+                                )
+                            ),
+                            successor_mission_id=(
+                                successor_lineage.successor_mission_id
+                                if successor_lineage
+                                else None
+                            ),
+                            successor_mission_title=(
+                                successor_mission.title
+                                if successor_mission
+                                else None
+                            ),
+                            successor_exists=successor_lineage is not None,
+                            successor_creation_actionable=bool(
+                                latest_recommendation
+                                and latest_recommendation.status
+                                == RecommendationStatus.ACCEPTED
+                                and successor_lineage is None
+                            ),
+                            successor_blocking_reason=(
+                                None
+                                if latest_recommendation
+                                and latest_recommendation.status
+                                == RecommendationStatus.ACCEPTED
+                                and successor_lineage is None
+                                else (
+                                    "Successor mission already exists."
+                                    if successor_lineage
+                                    else (
+                                        "Recommendation must be accepted."
+                                        if latest_recommendation
+                                        else "No recommendation is available."
+                                    )
                                 )
                             ),
                         ),

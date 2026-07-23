@@ -274,7 +274,7 @@ def test_in_memory_duplicate_snapshot_ruleset_rejected():
 def test_sqlite_schema_migration_and_exception_translation(tmp_path):
     path = tmp_path / "mission-control.db"
     repository = SQLiteMissionControlRepository(path, allowed_root=tmp_path)
-    assert repository.SCHEMA_VERSION == 5
+    assert repository.SCHEMA_VERSION == 6
     columns = {
         row[1]
         for row in repository.connection.execute(
@@ -318,7 +318,7 @@ def test_schema_v2_database_upgrades_without_rebuilding_analytics(tmp_path):
     version = reopened.connection.execute(
         "SELECT version FROM schema_version"
     ).fetchone()[0]
-    assert version == 5
+    assert version == 6
 
 
 def test_service_success_event_idempotency_and_source_immutability():

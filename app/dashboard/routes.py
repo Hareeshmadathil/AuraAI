@@ -105,6 +105,12 @@ class MissionRecommendationDecisionForm(BaseModel):
     founder_note: str | None = Field(default=None, max_length=2000)
 
 
+class RecommendationMissionCreationForm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    csrf_token: str = Field(min_length=32, max_length=200)
+
+
 class FounderDecisionForm(BaseModel):
     """Strict hash-bound local founder mutation payload."""
 
@@ -321,13 +327,21 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
         except KeyError as error:
             raise HTTPException(status_code=404, detail="Mission was not found.") from error
         csrf_token = secrets.token_urlsafe(32)
+        source_lineage = (
+            mission_control(request).repository
+            .find_successor_mission_lineage(mission_id)
+        )
         response = render(
             request=request,
             service=service,
             template_name="founder_review.html",
             page_title="Founder Mission Review",
             active_path="/missions",
-            extra_context={"review": review, "csrf_token": csrf_token},
+            extra_context={
+                "review": review,
+                "csrf_token": csrf_token,
+                "source_lineage": source_lineage,
+            },
         )
         response.set_cookie(
             "auraai_csrf",
@@ -1455,6 +1469,23 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             )
             if item.mission_lesson_id == mission_lesson_id
         ]
+        latest_recommendation = (
+            recommendations[0] if recommendations else None
+        )
+        successor_lineage = (
+            control.repository.find_recommendation_mission_lineage(
+                latest_recommendation.mission_recommendation_id
+            )
+            if latest_recommendation
+            else None
+        )
+        successor_mission = (
+            control.repository.get_mission(
+                successor_lineage.successor_mission_id
+            )
+            if successor_lineage
+            else None
+        )
         csrf_token = secrets.token_urlsafe(32)
         response = render(
             request=request,
@@ -1465,10 +1496,10 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             extra_context={
                 "mission": mission,
                 "source_lesson": lesson,
-                "latest_recommendation": (
-                    recommendations[0] if recommendations else None
-                ),
+                "latest_recommendation": latest_recommendation,
                 "recommendation_history": recommendations[1:],
+                "successor_lineage": successor_lineage,
+                "successor_mission": successor_mission,
                 "csrf_token": csrf_token,
             },
         )
@@ -1477,6 +1508,82 @@ def create_dashboard_router(template_directory: Path) -> APIRouter:
             secure=False, max_age=1800,
         )
         return response
+
+    @router.post(
+        "/missions/{source_mission_id}/recommendations/"
+        "{mission_recommendation_id}/create-mission",
+        response_class=RedirectResponse,
+    )
+    async def create_mission_from_recommendation(
+        source_mission_id: UUID,
+        mission_recommendation_id: UUID,
+        request: Request,
+    ) -> RedirectResponse:
+        from mission_control.models import (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        )
+
+        require_local(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        if content_type != "application/x-www-form-urlencoded":
+            raise HTTPException(
+                status_code=415, detail="Unsupported form content type."
+            )
+        body = await request.body()
+        if len(body) > 12_000:
+            raise HTTPException(status_code=413, detail="Form is too large.")
+        try:
+            values = parse_qs(
+                body.decode("utf-8"),
+                keep_blank_values=True,
+                strict_parsing=True,
+            )
+            if any(len(value) != 1 for value in values.values()):
+                raise ValueError("Repeated form field.")
+            form = RecommendationMissionCreationForm.model_validate(
+                {key: value[0] for key, value in values.items()}
+            )
+        except (UnicodeDecodeError, ValueError, ValidationError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid successor mission form.",
+            ) from error
+        if not secrets.compare_digest(
+            request.cookies.get("auraai_csrf", ""),
+            form.csrf_token,
+        ):
+            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+        try:
+            successor = (
+                mission_commands(request).create_mission_from_recommendation(
+                    source_mission_id=source_mission_id,
+                    mission_recommendation_id=mission_recommendation_id,
+                    actor="Local Founder",
+                )
+            )
+        except (
+            ConflictingDecisionError,
+            ItemNotFoundError,
+            MalformedCommandError,
+            MismatchError,
+            RepositoryConsistencyError,
+            RepositoryIntegrityError,
+            StaleContentError,
+        ) as error:
+            _raise_recommendation_http_error(error)
+        return RedirectResponse(
+            url=request.url_for(
+                "founder_review_page",
+                mission_id=successor.mission_id,
+            ),
+            status_code=303,
+        )
 
     @router.post(
         "/missions/{mission_id}/recommendations/"

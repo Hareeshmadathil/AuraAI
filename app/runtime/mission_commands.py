@@ -262,3 +262,23 @@ class MissionCommandService:
             decided_by_actor=actor,
             founder_note=founder_note,
         )
+
+    def create_mission_from_recommendation(
+        self,
+        *,
+        source_mission_id: UUID,
+        mission_recommendation_id: UUID,
+        actor: str,
+    ) -> MissionRecord:
+        """Explicitly create one ordinary successor through Mission Control."""
+
+        if not actor or not actor.strip():
+            raise MalformedCommandError("An actor must be specified.")
+        return (
+            self._runtime_manager.mission_control
+            .create_mission_from_recommendation(
+                source_mission_id=source_mission_id,
+                mission_recommendation_id=mission_recommendation_id,
+                created_by_actor=actor,
+            )
+        )

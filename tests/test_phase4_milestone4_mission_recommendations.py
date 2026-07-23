@@ -147,7 +147,7 @@ def test_repository_contract_and_in_memory_identity():
 def test_sqlite_schema_v5_and_v4_migration(tmp_path):
     path = tmp_path / "control.db"
     repository = SQLiteMissionControlRepository(path, allowed_root=tmp_path)
-    assert repository.SCHEMA_VERSION == 5
+    assert repository.SCHEMA_VERSION == 6
     assert {
         "mission_lesson_id",
         "recommendation_ruleset_version",
@@ -170,7 +170,7 @@ def test_sqlite_schema_v5_and_v4_migration(tmp_path):
     assert reopened.get_mission(mission.mission_id) == mission
     assert reopened.connection.execute(
         "SELECT version FROM schema_version"
-    ).fetchone()[0] == 5
+    ).fetchone()[0] == 6
 
 
 def test_creation_success_idempotency_event_and_source_immutability():

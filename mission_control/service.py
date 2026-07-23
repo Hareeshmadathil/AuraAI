@@ -38,6 +38,7 @@ from mission_control.models import (
     RepositoryConsistencyError, RepositoryIntegrityError, StaleContentError,
     ConflictingDecisionError, MissionLesson, MissionRecommendation,
     RecommendationDecision, RecommendationStatus, TaskCheckpoint,
+    RecommendationMissionLineage,
     EventRecord, MissionControlProjection, MissionControlStatus, MissionRecord,
     PublishingQueueStatus, RiskLevel, TaskRecord, TaskStatus, RenderJob,
     PublishingQueueItem, require_utc_datetime,
@@ -1620,6 +1621,235 @@ class MissionControlService:
                 },
             ))
             return updated
+
+    def create_mission_from_recommendation(
+        self,
+        *,
+        source_mission_id: UUID,
+        mission_recommendation_id: UUID,
+        created_by_actor: str,
+    ) -> MissionRecord:
+        """Explicitly create one ordinary mission from accepted advice."""
+
+        actor = created_by_actor.strip()
+        if not actor:
+            raise MalformedCommandError("An actor must be specified.")
+        source_mission = self.repository.get_mission(source_mission_id)
+        if source_mission is None:
+            raise ItemNotFoundError("Source mission not found.")
+        recommendation = (
+            self.repository.find_mission_recommendation_by_id(
+                mission_recommendation_id
+            )
+        )
+        if recommendation is None:
+            raise ItemNotFoundError("Mission recommendation not found.")
+        if recommendation.mission_id != source_mission_id:
+            raise MismatchError("Recommendation source mission ID mismatch.")
+        if recommendation.status != RecommendationStatus.ACCEPTED:
+            raise ConflictingDecisionError(
+                "Only an accepted recommendation can create a mission."
+            )
+        lesson = self.repository.find_mission_lesson_by_id(
+            recommendation.mission_lesson_id
+        )
+        interpretation = self.repository.find_interpretation_by_id(
+            recommendation.analytics_interpretation_id
+        )
+        snapshot = self.repository.find_snapshot_by_id(
+            recommendation.analytics_snapshot_id
+        )
+        publication = self.repository.get_publication_record_by_id(
+            recommendation.publication_id
+        )
+        queue_item = self.repository.get_publishing_queue_item(
+            recommendation.queue_item_id
+        )
+        if lesson is None:
+            raise ItemNotFoundError("Mission lesson not found.")
+        if interpretation is None:
+            raise ItemNotFoundError("Analytics interpretation not found.")
+        if snapshot is None:
+            raise ItemNotFoundError("Analytics snapshot not found.")
+        if publication is None:
+            raise ItemNotFoundError("Publication record not found.")
+        if queue_item is None:
+            raise ItemNotFoundError("Publishing queue item not found.")
+        if not all((
+            lesson.mission_id == source_mission_id,
+            interpretation.mission_id == source_mission_id,
+            snapshot.mission_id == source_mission_id,
+            publication.mission_id == source_mission_id,
+            queue_item.mission_id == source_mission_id,
+            lesson.analytics_interpretation_id
+            == recommendation.analytics_interpretation_id,
+            lesson.analytics_snapshot_id
+            == recommendation.analytics_snapshot_id,
+            lesson.publication_id == recommendation.publication_id,
+            lesson.queue_item_id == recommendation.queue_item_id,
+            interpretation.analytics_snapshot_id
+            == recommendation.analytics_snapshot_id,
+            interpretation.publication_id == recommendation.publication_id,
+            interpretation.queue_item_id == recommendation.queue_item_id,
+            snapshot.publication_id == recommendation.publication_id,
+            snapshot.queue_item_id == recommendation.queue_item_id,
+            publication.queue_item_id == recommendation.queue_item_id,
+            lesson.destination == recommendation.destination,
+            interpretation.destination == recommendation.destination,
+            snapshot.destination == recommendation.destination,
+            publication.destination == recommendation.destination,
+            queue_item.destination == recommendation.destination,
+            publication.content_hash == queue_item.manifest_hash,
+        )):
+            raise MismatchError(
+                "Recommendation mission source chain is inconsistent."
+            )
+        authoritative = build_mission_recommendation_payload(
+            lesson,
+            recommendation_ruleset_version=(
+                recommendation.recommendation_ruleset_version
+            ),
+        )
+        if (
+            mission_recommendation_payload_hash(authoritative)
+            != recommendation.payload_hash
+        ):
+            raise StaleContentError(
+                "Mission recommendation is not authoritative."
+            )
+        authoritative_fields = {
+            "confidence": authoritative.confidence,
+            "summary": authoritative.summary,
+            "proposals": authoritative.proposals,
+            "rationale": authoritative.rationale,
+            "evidence_references": authoritative.evidence_references,
+        }
+        if any(
+            getattr(recommendation, name) != value
+            for name, value in authoritative_fields.items()
+        ):
+            raise StaleContentError(
+                "Mission recommendation content is inconsistent."
+            )
+
+        existing = self.repository.find_recommendation_mission_lineage(
+            mission_recommendation_id
+        )
+        if existing:
+            successor = self.repository.get_mission(
+                existing.successor_mission_id
+            )
+            if successor is None:
+                raise RepositoryConsistencyError(
+                    "Recommendation lineage references a missing mission."
+                )
+            return successor
+
+        objective = " ".join(
+            proposal.statement for proposal in recommendation.proposals
+        )[:5000]
+        created_at = utc_now()
+        successor = MissionRecord(
+            title=f"Follow-up: {source_mission.title}"[:250],
+            objective=objective,
+            priority=source_mission.priority,
+            risk=source_mission.risk,
+            founder_owner=source_mission.founder_owner,
+            founder_goal=(
+                "Founder-approved follow-up to recommendation "
+                f"{mission_recommendation_id}."
+            ),
+            expected_outcome=(
+                "Evaluate the accepted advisory direction in an ordinary "
+                "mission."
+            ),
+            business_value=recommendation.summary,
+            difficulty=source_mission.difficulty,
+            estimated_execution_minutes=(
+                source_mission.estimated_execution_minutes
+            ),
+            required_departments=list(source_mission.required_departments),
+            required_approvals=list(source_mission.required_approvals),
+            success_criteria=list(source_mission.success_criteria),
+            failure_criteria=list(source_mission.failure_criteria),
+            artifacts_expected=list(source_mission.artifacts_expected),
+            mission_dependencies=[str(source_mission_id)],
+            confidence={
+                "low": 0.4,
+                "medium": 0.65,
+                "high": 0.85,
+            }[recommendation.confidence.value],
+            reasoning_summary=(
+                "Created only after founder acceptance of recommendation "
+                f"{mission_recommendation_id}; remains subject to normal "
+                "Mission Control execution."
+            ),
+        )
+        lineage = RecommendationMissionLineage(
+            successor_mission_id=successor.mission_id,
+            source_recommendation_id=mission_recommendation_id,
+            source_lesson_id=lesson.mission_lesson_id,
+            source_interpretation_id=interpretation.analytics_interpretation_id,
+            source_snapshot_id=snapshot.analytics_snapshot_id,
+            source_publication_id=publication.publication_id,
+            source_queue_item_id=queue_item.queue_item_id,
+            source_mission_id=source_mission_id,
+            created_at=created_at,
+            created_by_actor=actor,
+        )
+        try:
+            with self.repository.transaction():
+                winner = self.repository.find_recommendation_mission_lineage(
+                    mission_recommendation_id
+                )
+                if winner:
+                    mission = self.repository.get_mission(
+                        winner.successor_mission_id
+                    )
+                    if mission is None:
+                        raise RepositoryConsistencyError(
+                            "Recommendation lineage references a missing "
+                            "mission."
+                        )
+                    return mission
+                self.create_mission(successor)
+                self.repository.save_recommendation_mission_lineage(lineage)
+                self.repository.append_event(EventRecord(
+                    mission_id=successor.mission_id,
+                    event_type="mission.created_from_recommendation",
+                    payload={
+                        "new_mission_id": str(successor.mission_id),
+                        "recommendation_id": str(
+                            mission_recommendation_id
+                        ),
+                        "lesson_id": str(lesson.mission_lesson_id),
+                        "interpretation_id": str(
+                            interpretation.analytics_interpretation_id
+                        ),
+                        "snapshot_id": str(snapshot.analytics_snapshot_id),
+                        "publication_id": str(publication.publication_id),
+                        "source_mission_id": str(source_mission_id),
+                        "actor": actor,
+                        "timestamp": created_at.isoformat(),
+                    },
+                ))
+        except DuplicateRecordError:
+            winner = self.repository.find_recommendation_mission_lineage(
+                mission_recommendation_id
+            )
+            if winner is None:
+                raise RepositoryConsistencyError(
+                    "Expected successor mission winner but none exists."
+                )
+            stored = self.repository.get_mission(
+                winner.successor_mission_id
+            )
+            if stored is None:
+                raise RepositoryConsistencyError(
+                    "Successor lineage winner references a missing mission."
+                )
+            return stored
+        return successor
 
 class DepartmentBus:
     """Synchronous injected bus; it never starts background or external work."""

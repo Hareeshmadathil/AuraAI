@@ -143,6 +143,28 @@ class MissionRecord(AuraBaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class RecommendationMissionLineage(AuraBaseModel):
+    """Immutable reason and source chain for a successor mission."""
+
+    model_config = ConfigDict(frozen=True)
+
+    successor_mission_id: UUID
+    source_recommendation_id: UUID
+    source_lesson_id: UUID
+    source_interpretation_id: UUID
+    source_snapshot_id: UUID
+    source_publication_id: UUID
+    source_queue_item_id: UUID
+    source_mission_id: UUID
+    created_at: datetime
+    created_by_actor: str = Field(min_length=1, max_length=150)
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_lineage_time(cls, value: datetime) -> datetime:
+        return require_utc_datetime(value, field_name="lineage created_at")
+
+
 class TaskRecord(AuraBaseModel):
     task_id: UUID = Field(default_factory=uuid4)
     mission_id: UUID
